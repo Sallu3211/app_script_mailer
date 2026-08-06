@@ -1,0 +1,20 @@
+{
+  "name": "cold-email-relay-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "SMTP send + IMAP reply-poll relay for the Apps Script cold email sequencer, deployed on Railway.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node -r dotenv/config src/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "imapflow": "^1.0.167",
+    "nodemailer": "^9.0.4"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

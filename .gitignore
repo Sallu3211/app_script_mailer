@@ -1,0 +1,15 @@
+node_modules/
+.env
+.env.local
+*.log
+npm-debug.log*
+
+# clasp local project link (contains your scriptId, machine-specific)
+.clasp.json
+
+# never commit clasp's OAuth credentials -- they don't belong in this repo
+# at all (they live in your home directory), but ignore defensively anyway
+.clasprc.json
+
+.DS_Store
+Thumbs.db
