@@ -2,119 +2,188 @@
 
 Self-hosted cold outreach: Google Sheets is the control panel and system of
 record, Google Apps Script is the scheduler, and a small Node relay service
-(deployed on Railway) does the actual SMTP sending and IMAP reply-polling
-against your Titan mailboxes (Apps Script can't speak SMTP/IMAP directly).
+does the actual SMTP sending and IMAP reply-polling against Titan mailboxes
+(Apps Script can't speak SMTP/IMAP directly — it has no raw socket access).
 
-See `../` conversation / the plan file for the full architecture writeup.
-This file is the practical step-by-step to get it running.
+## Current deployment (this instance)
 
-## 1. Google Sheet + Apps Script
+- **Sheet / Apps Script**: bound to the spreadsheet created via `clasp create`.
+  Web App URL: `https://script.google.com/macros/s/AKfycbxxAV3AfgI92ZvaPiJCkFTsOkeng8K0on26FUdQENkw2CPg0IOreGx7M7SfPY9Ba5rKdQ/exec`
+- **Relay service**: runs on a Hetzner VPS (`157.180.121.10`, Helsinki), **not**
+  Railway — Railway blocks all outbound SMTP ports (25/465/587/2525) on
+  anything below their paid Pro plan, which broke sending entirely. Hetzner
+  has no such restriction and is a flat monthly cost regardless of load.
+  - Public HTTPS URL: `https://relay.byterise.online:8443`
+  - Runs as a systemd service (`cold-email-relay`, auto-restarts, survives
+    reboots): `/opt/cold-email-relay`, env file at `/etc/cold-email-relay.env`
+    (root-only permissions, holds real Titan credentials — never in the Sheet)
+  - Fronted by **Caddy** for automatic HTTPS (Let's Encrypt), listening on
+    port `8443` instead of the standard `443` because that port is already
+    used by an unrelated `danted` SOCKS proxy already running on that box —
+    config at `/etc/caddy/Caddyfile`
+  - The raw Node process only binds `127.0.0.1:3000` (set via `HOST` env
+    var) — it is **not** directly internet-reachable, only through Caddy's
+    TLS. Don't remove that `HOST` setting; without it the secret would
+    travel in plaintext to anyone who hits the port directly.
+- SSH access: `ssh -i ~/.ssh/hetzner root@157.180.121.10`
 
-1. Create a new blank Google Sheet.
-2. Extensions -> Apps Script. Delete the default `Code.gs` boilerplate.
-3. Either paste every file from `apps-script/` in manually (File > New > Script
-   file / Html file, matching names exactly, `dashboard.html` as an HTML file,
-   the rest as Script files), **or** use `clasp` to push them all at once:
-
-   ```
-   npm install -g @google/clasp
-   clasp login                     # opens a browser once, one-time auth
-   cd apps-script
-   clasp create --type sheet --title "Cold Email Sequencer" --rootDir .
-   clasp push
-   ```
-
-   `clasp create` links the Apps Script project to a **new** spreadsheet it
-   creates for you (prints the Sheet URL). If you already made a Sheet in
-   step 1, use `clasp clone <scriptId>` instead (Extensions > Apps Script >
-   Project Settings has the Script ID) so it pushes into that one.
-
-4. In the script editor: Run > run `setupSystem` once. Authorize the
-   permissions it asks for (Sheets access, plus URL Fetch and external
-   requests since it'll call the relay later). This creates all 6 tabs with
-   headers and sample rows, generates `RELAY_SHARED_SECRET`, and installs
-   the recurring trigger.
-5. Deploy > New deployment > type **Web app**. Execute as: **Me**. Who has
-   access: **Anyone**. Deploy, copy the `/exec` URL.
-6. In the Sheet's `Settings` tab, paste that URL into the
-   `APPS_SCRIPT_WEB_APP_URL` row.
-
-## 2. Titan mailbox details
-
-For each sender mailbox you'll use, get from the Titan control panel:
-- SMTP host/port (standard: `smtp.titan.email`, port `465` w/ SSL or `587` w/ STARTTLS)
-- IMAP host/port (standard: `imap.titan.email`, port `993` w/ SSL)
-- The mailbox's username (its full email address) and password
-
-Also worth checking now (this matters far more for deliverability than any
-code in this repo): SPF, DKIM, and DMARC records for your sending domain(s)
-in your DNS provider. Titan's docs/support can give you the exact records
-to add if you haven't set these up already.
-
-## 3. Relay service on Railway
+## Architecture, at a glance
 
 ```
-npm install -g @railway/cli
-railway login                     # opens a browser once, one-time auth
-cd relay-service
-railway init                      # or: railway link, if you already made a project in the dashboard
-railway up
+Google Sheet (data + control)
+      |
+Apps Script (scheduler, runs every N min via time trigger)
+      |  HTTPS, X-Relay-Secret header
+      v
+Hetzner relay service (Node/Express)
+      |                              ^
+      | SMTP (nodemailer)            | IMAP poll every 5 min
+      v                              |
+Titan mailbox(es) --------------------
+      |
+   (reply arrives) --> relay reports it --> doPost --> Apps Script marks
+   the matching Prospect row Status = Replied, sequence stops for them
 ```
 
-Set environment variables (Railway dashboard, or via CLI):
+## Sheet tabs
+
+- **Settings** — key/value config (relay URL/secret, timezone, test mode, etc.)
+- **Senders** — one row per Titan mailbox. `Email` must *exactly* match an
+  `email` key in the relay's `SENDERS_CONFIG` env var, or sends fail with
+  "unknown sender."
+- **Campaigns** — one row per campaign: which sender, daily limit, send
+  window, Active/Paused.
+- **Prospects** — one row per prospect: name/email/company/custom fields,
+  `Status` (`Pending` / `Scheduled` / `Paused` / `Replied` / `Bounced` /
+  `Completed`), `CurrentStage`, `NextSendDate`.
+- **Templates** — one row per campaign per stage (`0` = Initial, `1`-`10` =
+  Follow-up 1-10), with `{{first_name}}` / `{{last_name}}` / `{{company}}` /
+  `{{email}}` / `{{custom1}}` / `{{custom2}}` merge tags and
+  `DelayDaysFromPrevious`.
+- **Logs** — every send attempt and every scheduler skip reason, newest last.
+- **Replies** — every inbound message the relay's IMAP poller sees, whether
+  or not it matched a tracked prospect (unmatched ones stay here for
+  visibility — e.g. catching a typo'd prospect email — but the dashboard's
+  "Recent Replies" panel only shows matched ones).
+
+## How personalization actually works with many prospects, one sender
+
+One sender mailbox can serve any number of prospects. Each prospect is its
+own row with its own progress (`CurrentStage`/`NextSendDate`) — they don't
+move in lockstep. Templates are written *once* per stage per campaign using
+merge tags, so the same template produces a different, personalized email
+per prospect at send time. All of them still go out from that one sender's
+mailbox and respect its `DailyLimit`, so a lower daily limit naturally
+spreads sends out over time instead of firing them all at once.
+
+## Setup from scratch (if redeploying elsewhere)
+
+### 1. Google Sheet + Apps Script
 
 ```
-railway variables set RELAY_SHARED_SECRET="<paste the value from Settings!RELAY_SHARED_SECRET>"
-railway variables set APPS_SCRIPT_WEB_APP_URL="<the /exec URL from step 1.5>"
-railway variables set SENDERS_CONFIG='[{"email":"sales1@yourdomain.com","smtpHost":"smtp.titan.email","smtpPort":465,"smtpSecure":true,"smtpUser":"sales1@yourdomain.com","smtpPass":"REAL_PASSWORD","imapHost":"imap.titan.email","imapPort":993,"imapUser":"sales1@yourdomain.com","imapPass":"REAL_PASSWORD"}]'
-railway variables set POLL_INTERVAL_MINUTES=5
-railway variables set POLL_SAFETY_MARGIN_MINUTES=2
+npm install -g @google/clasp
+clasp login
+cd apps-script
+clasp create --type sheets --title "Cold Email Sequencer" --rootDir .
+clasp push
 ```
 
-`SENDERS_CONFIG` is a JSON array — one object per mailbox. Add more objects
-for more senders. See `.env.example` for the full shape.
+Then, from the Sheet itself (not the script editor) so the confirmation
+popup can render: reload the Sheet's browser tab, use **Cold Email → Setup
+System** from the menu (creates all 7 tabs, seeds sample data, generates
+`RELAY_SHARED_SECRET`, installs the time-based trigger). If the menu doesn't
+appear, reload the tab again — it's created by a simple `onOpen` trigger
+that only fires on a fresh page load.
 
-Railway auto-detects Node from `package.json` (no Dockerfile needed) and
-exposes a public URL — copy it into the Sheet's `Settings!RELAY_BASE_URL`.
-Health check path is `/health`.
+Deploy as a Web App: `clasp deploy` (Execute as: Me, Access: Anyone). To
+push code changes to an *existing* deployment without changing its URL:
+`clasp deploy --deploymentId <id> --description "..."`.
 
-## 4. Fill in real data
+Paste the resulting `/exec` URL into `Settings!APPS_SCRIPT_WEB_APP_URL`.
 
-In the Sheet:
-- **Senders**: one row per mailbox. `Email` must exactly match a `email`
-  key in `SENDERS_CONFIG`. Set `Status = Active` when ready.
-- **Campaigns**: one row per campaign, `SenderID` referencing a Senders row.
-  Set `Status = Active` and a sending window when ready.
-- **Templates**: rows for `Stage 0` (Initial) through however many
-  follow-ups you want (up to `Stage 10`), each with `DelayDaysFromPrevious`
-  and `{{first_name}}`/`{{last_name}}`/`{{company}}`/`{{email}}`/`{{custom1}}`/
-  `{{custom2}}` merge tags in Subject/Body.
-- **Prospects**: one row per prospect, `Status = Pending`, `CurrentStage = 0`.
+### 2. Titan mailbox details
 
-Delete or repurpose the sample rows `setupSystem()` created.
+Standard endpoints (confirm in the Titan control panel): SMTP
+`smtp.titan.email:465` (SSL), IMAP `imap.titan.email:993` (SSL). Also check
+SPF/DKIM/DMARC are set for your sending domain — matters far more for
+deliverability than anything in this codebase.
 
-## 5. Test before going live
+### 3. Relay service (on a plain VPS, not Railway)
 
-`Settings!TEST_MODE` defaults to `TRUE`. Set
-`Settings!TEST_MODE_EMAIL_OVERRIDE` to your own inbox, then:
+Railway's SMTP port block makes it unusable for the sending side without a
+paid upgrade. Any regular VPS (Hetzner, DigitalOcean, etc.) works fine:
 
-1. Open the dashboard (Cold Email menu > Open Dashboard, or visit the Web
-   App URL) and click **Run Scheduler Now** — or run `runScheduler` from the
-   script editor.
-2. Check the `Logs` tab for a `Success` row, and check your test inbox for
-   the (fully personalized) email.
-3. Back-date that prospect's `NextSendDate` to the past, run again, confirm
-   the follow-up arrives threaded under the first (same subject w/ "Re:",
-   `In-Reply-To` header set) and personalization is correct again.
-4. Reply to the test email from your inbox. Wait one poll cycle
-   (`POLL_INTERVAL_MINUTES`), then run the scheduler again — the prospect
-   should now show `Status = Replied` and be skipped.
-5. Only once all of that looks right: set `TEST_MODE = FALSE`, flip real
-   Senders/Campaigns to `Active`, and let the trigger run unattended.
+```
+# On the server:
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+# copy relay-service/src, package.json, package-lock.json to /opt/cold-email-relay
+cd /opt/cold-email-relay && npm ci --omit=dev
+```
+
+Create `/etc/cold-email-relay.env` (root-only, `chmod 600`):
+```
+PORT=3000
+HOST=127.0.0.1          # keep this -- see security note above
+NODE_ENV=production
+RELAY_SHARED_SECRET=<same value as Settings!RELAY_SHARED_SECRET>
+APPS_SCRIPT_WEB_APP_URL=<the /exec URL from step 1>
+SENDERS_CONFIG=[{"email":"...","smtpHost":"smtp.titan.email","smtpPort":465,"smtpSecure":true,"smtpUser":"...","smtpPass":"...","imapHost":"imap.titan.email","imapPort":993,"imapUser":"...","imapPass":"..."}]
+POLL_INTERVAL_MINUTES=5
+POLL_SAFETY_MARGIN_MINUTES=2
+```
+
+Run it as a systemd service (see the live unit at
+`/etc/systemd/system/cold-email-relay.service` on the Hetzner box for the
+exact template) so it survives reboots and restarts on crash.
+
+Put a reverse proxy with automatic HTTPS in front of it (Caddy is a
+one-file config: `reverse_proxy localhost:3000` under your domain). A
+domain is required — free HTTPS certs can't be issued for a bare IP. If
+port 443 is already in use by something else on the box, point Caddy at
+a different port (e.g. `yourdomain.com:8443`) instead of fighting for 443.
+
+Copy the resulting public HTTPS URL into `Settings!RELAY_BASE_URL`.
+
+### 4. Fill in real data
+
+Replace the sample Sender/Campaign/Prospect/Template rows `Setup System`
+created. `Senders!Email` must exactly match a `SENDERS_CONFIG` entry.
+
+### 5. Test before going live
+
+`Settings!TEST_MODE` defaults to `TRUE`. Set `TEST_MODE_EMAIL_OVERRIDE` to
+your own inbox first. Then: **Run Scheduler Now** from the dashboard →
+check the `Logs` tab and your inbox → reply to it and wait one poll cycle
+→ confirm the prospect flips to `Status = Replied` in the Sheet and shows
+up in the dashboard's Recent Replies panel. Only then flip `TEST_MODE` off
+and set real Senders/Campaigns to `Active`.
 
 ## Manual controls, day-to-day
 
 - Pause one prospect without deleting it: set its `Status` cell to `Paused`.
 - Pause everything instantly: `Settings!SYSTEM_STATUS = Paused`.
-- `Settings!MAX_EMAILS_PER_RUN` caps how many sends happen per trigger firing
-  (defensive, avoids the 6-minute Apps Script execution limit).
+- `Settings!MAX_EMAILS_PER_RUN` caps sends per trigger firing (defensive,
+  avoids the 6-minute Apps Script execution limit).
+- If a campaign is silently sending nothing, check the **Logs** tab first —
+  the scheduler logs a specific skip reason (sender inactive, outside send
+  window, no capacity, etc.) every time it skips a campaign, so this
+  shouldn't require guesswork.
+
+## Gotchas hit during setup (so you don't re-debug them)
+
+- **Sheet cells auto-converting typed times**: typing `09:00` into
+  `Campaigns!SendWindowStart`/`End` can get silently reinterpreted by
+  Google Sheets into an internal time-serial value instead of staying
+  plain text, which broke the scheduler's "is it within the send window"
+  check in a way that produced no visible error. `Setup System` now forces
+  those two columns to Plain Text formatting and self-heals any row
+  that's already corrupted this way — safe to re-run any time this is
+  suspected.
+- **The "Cold Email" menu only appears on a fresh page load** — it's
+  created by Apps Script's `onOpen` simple trigger, which doesn't re-fire
+  on code pushes. Reload the Sheet's browser tab if the menu seems to be
+  missing.
+- **Both the Campaign *and* its Sender must be `Active`** for the scheduler
+  to pick anything up — either one being off causes a silent skip (now
+  logged explicitly in the Logs tab as of the latest deploy).

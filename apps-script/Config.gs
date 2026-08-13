@@ -10,7 +10,8 @@ var SHEET_NAMES = {
   CAMPAIGNS: 'Campaigns',
   PROSPECTS: 'Prospects',
   TEMPLATES: 'Templates',
-  LOGS: 'Logs'
+  LOGS: 'Logs',
+  REPLIES: 'Replies'
 };
 
 var COLUMNS = {
@@ -18,8 +19,9 @@ var COLUMNS = {
   SENDERS: ['SenderID', 'Name', 'Email', 'DailyLimit', 'SentToday', 'LastResetDate', 'Status'],
   CAMPAIGNS: ['CampaignID', 'Name', 'SenderID', 'DailyLimit', 'SentToday', 'LastResetDate', 'SendWindowStart', 'SendWindowEnd', 'Status'],
   PROSPECTS: ['ProspectID', 'FirstName', 'LastName', 'Company', 'Email', 'CampaignID', 'SenderID', 'Status', 'CurrentStage', 'LastSentDate', 'NextSendDate', 'LastMessageId', 'LastError', 'Custom1', 'Custom2'],
-  TEMPLATES: ['TemplateID', 'CampaignID', 'Stage', 'DelayDaysFromPrevious', 'Subject', 'Body'],
-  LOGS: ['LogID', 'Timestamp', 'CampaignID', 'SenderID', 'ProspectID', 'ProspectEmail', 'Stage', 'Subject', 'Status', 'ErrorMessage', 'MessageId']
+  TEMPLATES: ['TemplateID', 'ProspectID', 'Stage', 'DelayDaysFromPrevious', 'Subject', 'Body'],
+  LOGS: ['LogID', 'Timestamp', 'CampaignID', 'SenderID', 'ProspectID', 'ProspectEmail', 'Stage', 'Subject', 'Status', 'ErrorMessage', 'MessageId'],
+  REPLIES: ['ReplyID', 'Timestamp', 'SenderEmail', 'ProspectID', 'ProspectName', 'ProspectEmail', 'CampaignID', 'Subject', 'BodyPreview', 'Matched']
 };
 
 var PROSPECT_STATUS = {

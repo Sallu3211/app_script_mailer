@@ -17,6 +17,18 @@
   .nav { display: flex; gap: 8px; flex-wrap: wrap; }
   .nav a { text-decoration: none; background: white; border: 1px solid #ddd; padding: 8px 14px; border-radius: 6px; font-size: 13px; color: #333; }
   #status { font-size: 13px; color: #666; margin-top: 8px; }
+  h2 { font-size: 15px; margin: 28px 0 10px; }
+  .replies { display: flex; flex-direction: column; gap: 8px; }
+  .reply-card { background: white; border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .reply-card.unmatched { opacity: 0.65; }
+  .reply-top { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; margin-bottom: 4px; flex-wrap: wrap; }
+  .reply-who { font-weight: 600; }
+  .reply-meta { color: #888; font-size: 12px; }
+  .reply-subject { font-size: 13px; color: #444; margin-bottom: 4px; }
+  .reply-body { font-size: 13px; color: #222; white-space: pre-wrap; max-height: 4.5em; overflow: hidden; }
+  .reply-tag { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 10px; background: #eef1ff; color: #2d5bff; margin-left: 6px; }
+  .reply-tag.no-match { background: #f2f2f2; color: #888; }
+  .empty { color: #888; font-size: 13px; }
 </style>
 
 <h1>Cold Email Dashboard</h1>
@@ -33,6 +45,9 @@
 <div id="status"></div>
 
 <div class="nav" id="nav"></div>
+
+<h2>Recent Replies</h2>
+<div class="replies" id="replies"></div>
 
 <script>
   var TILE_DEFS = [
@@ -67,8 +82,36 @@
     });
   }
 
+  function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function renderReplies(replies) {
+    var el = document.getElementById('replies');
+    if (!replies || replies.length === 0) {
+      el.innerHTML = '<div class="empty">No replies yet.</div>';
+      return;
+    }
+    el.innerHTML = replies.map(function (r) {
+      var who = r.prospectName ? r.prospectName + ' <' + r.prospectEmail + '>' : r.prospectEmail;
+      var tag = r.matched
+        ? '<span class="reply-tag">' + escapeHtml(r.campaignName || 'matched') + '</span>'
+        : '<span class="reply-tag no-match">no prospect match</span>';
+      var when = r.timestamp ? new Date(r.timestamp).toLocaleString() : '';
+      return '<div class="reply-card' + (r.matched ? '' : ' unmatched') + '">' +
+        '<div class="reply-top"><span class="reply-who">' + escapeHtml(who) + tag + '</span>' +
+        '<span class="reply-meta">to ' + escapeHtml(r.senderEmail) + ' &middot; ' + escapeHtml(when) + '</span></div>' +
+        '<div class="reply-subject">' + escapeHtml(r.subject) + '</div>' +
+        '<div class="reply-body">' + escapeHtml(r.bodyPreview) + '</div>' +
+        '</div>';
+    }).join('');
+  }
+
   function refresh() {
     google.script.run.withSuccessHandler(render).getDashboardStats();
+    google.script.run.withSuccessHandler(renderReplies).getRecentReplies(25);
   }
 
   function runNow() {

@@ -1,0 +1,115 @@
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; padding: 20px; color: #1a1a1a; }
+  h2 { font-size: 16px; margin: 0 0 16px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: #444; margin: 12px 0 4px; }
+  input, select, textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; font-family: inherit; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  .hint { font-size: 11px; color: #888; margin-top: 4px; }
+  button { background: #2d5bff; color: white; border: none; border-radius: 6px; padding: 10px 18px; font-size: 13px; cursor: pointer; margin-top: 18px; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  #status { font-size: 13px; margin-top: 10px; }
+  #status.error { color: #a02020; }
+  #status.success { color: #1a6b32; }
+</style>
+
+<h2>Add New Prospect</h2>
+
+<label>Campaign (determines sender)</label>
+<select id="campaignId"></select>
+
+<div class="row">
+  <div>
+    <label>First Name</label>
+    <input id="firstName" />
+  </div>
+  <div>
+    <label>Last Name</label>
+    <input id="lastName" />
+  </div>
+</div>
+
+<label>Company</label>
+<input id="company" />
+
+<label>Email *</label>
+<input id="email" type="email" />
+
+<div class="row">
+  <div>
+    <label>Custom 1</label>
+    <input id="custom1" />
+  </div>
+  <div>
+    <label>Custom 2</label>
+    <input id="custom2" />
+  </div>
+</div>
+
+<label>Number of follow-ups (0-10, plus the Initial)</label>
+<input id="followupCount" type="number" min="0" max="10" value="3" />
+<div class="hint">Creates blank Template rows for Stage 0 (Initial) through this many follow-ups, already linked to this prospect. You fill in Subject/Body/delay afterward in the Templates tab.</div>
+
+<button id="submitBtn" onclick="submitForm()">Add Prospect</button>
+<div id="status"></div>
+
+<script>
+  function loadCampaigns() {
+    google.script.run.withSuccessHandler(function (campaigns) {
+      var select = document.getElementById('campaignId');
+      if (!campaigns || campaigns.length === 0) {
+        select.innerHTML = '<option value="">No campaigns found -- create one in the Campaigns tab first</option>';
+        return;
+      }
+      select.innerHTML = campaigns.map(function (c) {
+        return '<option value="' + c.campaignId + '">' + c.name + ' (sender: ' + c.senderName + ')</option>';
+      }).join('');
+    }).getCampaignsForDropdown();
+  }
+
+  function submitForm() {
+    var statusEl = document.getElementById('status');
+    var btn = document.getElementById('submitBtn');
+    var email = document.getElementById('email').value.trim();
+    var campaignId = document.getElementById('campaignId').value;
+
+    if (!email) { statusEl.className = 'error'; statusEl.innerText = 'Email is required.'; return; }
+    if (!campaignId) { statusEl.className = 'error'; statusEl.innerText = 'Pick a campaign.'; return; }
+
+    var data = {
+      firstName: document.getElementById('firstName').value.trim(),
+      lastName: document.getElementById('lastName').value.trim(),
+      company: document.getElementById('company').value.trim(),
+      email: email,
+      campaignId: campaignId,
+      custom1: document.getElementById('custom1').value.trim(),
+      custom2: document.getElementById('custom2').value.trim(),
+      followupCount: parseInt(document.getElementById('followupCount').value, 10) || 0
+    };
+
+    btn.disabled = true;
+    statusEl.className = '';
+    statusEl.innerText = 'Adding...';
+
+    google.script.run
+      .withSuccessHandler(function (result) {
+        statusEl.className = 'success';
+        statusEl.innerText = 'Added ' + result.prospectId + ' with ' + result.stagesCreated + ' template row(s). Go fill in Subject/Body in the Templates tab.';
+        btn.disabled = false;
+        document.getElementById('email').value = '';
+        document.getElementById('firstName').value = '';
+        document.getElementById('lastName').value = '';
+        document.getElementById('company').value = '';
+        document.getElementById('custom1').value = '';
+        document.getElementById('custom2').value = '';
+      })
+      .withFailureHandler(function (err) {
+        statusEl.className = 'error';
+        statusEl.innerText = 'Error: ' + err.message;
+        btn.disabled = false;
+      })
+      .addProspectWithFollowups(data);
+  }
+
+  loadCampaigns();
+</script>

@@ -91,10 +91,36 @@ function buildMergeData(prospect) {
   };
 }
 
+/**
+ * Normalizes a send-window boundary to "HH:mm". If a cell typed as "09:00"
+ * gets auto-converted by Sheets into its internal time-serial type, Apps
+ * Script reads it back as a Date object whose UTC hour/minute directly ARE
+ * the displayed wall-clock time (Sheets time-only serials are timezone-
+ * agnostic elapsed-time values, epoch-dated 1899-12-30) -- so this must
+ * read getUTCHours()/getUTCMinutes() directly and must NOT run the value
+ * through a timezone conversion, which would shift it incorrectly.
+ */
+function normalizeTimeOfDay_(value) {
+  if (!value) return '';
+  if (value instanceof Date) {
+    return ('0' + value.getUTCHours()).slice(-2) + ':' + ('0' + value.getUTCMinutes()).slice(-2);
+  }
+  // Zero-pad plain text too ("9:00" -> "09:00") -- the "HH:mm" comparison
+  // in isWithinSendWindow is a plain string compare, and an unpadded
+  // single-digit hour breaks lexicographic ordering (e.g. "14:32" sorts
+  // before "9:00" as text even though 2:32pm is obviously later).
+  var parts = String(value).trim().split(':');
+  var hh = ('0' + (parseInt(parts[0], 10) || 0)).slice(-2);
+  var mm = ('0' + (parseInt(parts[1], 10) || 0)).slice(-2);
+  return hh + ':' + mm;
+}
+
 function isWithinSendWindow(startStr, endStr, tz) {
   if (!startStr || !endStr) return true;
   var now = Utilities.formatDate(new Date(), tz || getSetting('TIMEZONE'), 'HH:mm');
-  return now >= startStr && now <= endStr;
+  var start = normalizeTimeOfDay_(startStr);
+  var end = normalizeTimeOfDay_(endStr);
+  return now >= start && now <= end;
 }
 
 function addDays(date, days) {

@@ -15,28 +15,58 @@ function runScheduler() {
   var sentThisRun = 0;
 
   var campaigns = getActiveCampaigns();
+  if (campaigns.length === 0) {
+    logSystemEvent('Scheduler ran: no Active campaigns found', 'Info');
+    return;
+  }
+
+  var anyProcessed = false;
 
   for (var c = 0; c < campaigns.length; c++) {
     if (sentThisRun >= maxPerRun) break;
 
     var campaign = campaigns[c];
     var sender = getSenderById(campaign.SenderID);
-    if (!sender || sender.Status !== 'Active') continue;
+
+    if (!sender) {
+      logSystemEvent('Campaign "' + campaign.Name + '" skipped: SenderID ' + campaign.SenderID + ' not found in Senders tab', 'Warn');
+      continue;
+    }
+    if (sender.Status !== 'Active') {
+      logSystemEvent('Campaign "' + campaign.Name + '" skipped: sender "' + sender.Name + '" is not Active', 'Warn');
+      continue;
+    }
 
     sender = resetSenderDailyCounterIfNeeded(sender);
     campaign = resetCampaignDailyCounterIfNeeded(campaign);
 
-    if (!isCampaignWithinSendWindow(campaign)) continue;
+    if (!isCampaignWithinSendWindow(campaign)) {
+      logSystemEvent(
+        'Campaign "' + campaign.Name + '" skipped: outside send window (' +
+        normalizeTimeOfDay_(campaign.SendWindowStart) + '-' + normalizeTimeOfDay_(campaign.SendWindowEnd) +
+        ', timezone ' + getSetting('TIMEZONE') + ')',
+        'Warn'
+      );
+      continue;
+    }
 
     var remaining = Math.min(
       campaignRemainingCapacity(campaign),
       senderRemainingCapacity(sender),
       maxPerRun - sentThisRun
     );
-    if (remaining <= 0) continue;
+    if (remaining <= 0) {
+      logSystemEvent('Campaign "' + campaign.Name + '" skipped: no remaining daily capacity', 'Warn');
+      continue;
+    }
 
     var due = getDueProspects(campaign.CampaignID, remaining);
+    if (due.length === 0) {
+      logSystemEvent('Campaign "' + campaign.Name + '": no due prospects right now', 'Info');
+      continue;
+    }
 
+    anyProcessed = true;
     for (var i = 0; i < due.length; i++) {
       try {
         sentThisRun += processProspect_(due[i], campaign, sender) ? 1 : 0;
@@ -44,6 +74,10 @@ function runScheduler() {
         logSystemEvent('Unhandled error processing prospect ' + due[i].ProspectID + ': ' + err.message, 'Error');
       }
     }
+  }
+
+  if (!anyProcessed && sentThisRun === 0) {
+    logSystemEvent('Scheduler ran: no sends this cycle (see per-campaign skip reasons above, if any)', 'Info');
   }
 }
 
@@ -54,10 +88,12 @@ function runScheduler() {
  */
 function processProspect_(prospect, campaign, sender) {
   var stageToSend = Number(prospect.CurrentStage) || 0;
-  var template = getTemplateForStage(campaign.CampaignID, stageToSend);
+  var template = getTemplateForStage(prospect.ProspectID, stageToSend);
 
   if (!template) {
-    // Sequence/template was edited out from under an in-flight prospect.
+    // No (more) template rows for this specific prospect at this stage --
+    // either their sequence is genuinely exhausted, or a template row was
+    // never filled in / got edited out from under an in-flight prospect.
     updateRowByKey(SHEET_NAMES.PROSPECTS, 'ProspectID', prospect.ProspectID, {
       Status: PROSPECT_STATUS.COMPLETED
     });
@@ -65,7 +101,7 @@ function processProspect_(prospect, campaign, sender) {
       campaignId: campaign.CampaignID, senderId: sender.SenderID,
       prospectId: prospect.ProspectID, prospectEmail: prospect.Email,
       stage: stageToSend, subject: '', status: 'Info',
-      errorMessage: 'No template for stage ' + stageToSend + '; marked Completed'
+      errorMessage: 'No template for this prospect at stage ' + stageToSend + '; marked Completed'
     });
     return false;
   }
@@ -74,7 +110,7 @@ function processProspect_(prospect, campaign, sender) {
   var result = sendEmailViaRelay(payload);
 
   if (result.success) {
-    updateProspectAfterSend(prospect.ProspectID, campaign.CampaignID, stageToSend, result.messageId);
+    updateProspectAfterSend(prospect.ProspectID, stageToSend, result.messageId);
     incrementSenderSentCount(sender.SenderID, parseInt(sender.SentToday, 10) || 0);
     incrementCampaignSentCount(campaign.CampaignID, parseInt(campaign.SentToday, 10) || 0);
     sender.SentToday = (parseInt(sender.SentToday, 10) || 0) + 1;

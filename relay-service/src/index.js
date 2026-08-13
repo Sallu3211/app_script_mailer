@@ -32,8 +32,8 @@ app.use((err, req, res, next) => {
   res.status(500).json({ success: false, error: 'Internal error', code: 'INTERNAL', permanent: false });
 });
 
-app.listen(config.port, () => {
-  logger.info(`Relay service listening on port ${config.port} (${config.nodeEnv})`);
+app.listen(config.port, config.host, () => {
+  logger.info(`Relay service listening on ${config.host}:${config.port} (${config.nodeEnv})`);
   logger.info(`Configured mailboxes: ${config.senders.map((s) => s.email).join(', ')}`);
   poller.start(config);
 });

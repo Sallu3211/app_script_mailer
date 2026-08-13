@@ -49,3 +49,40 @@ function getDashboardStats() {
 function getSpreadsheetUrl() {
   return getSpreadsheet().getUrl();
 }
+
+/**
+ * Most recent replies from actual known prospects, newest first. Used by
+ * the dashboard's "Recent Replies" panel so you can see who replied and
+ * what they said without opening the Sheet or any individual Titan mailbox.
+ *
+ * Unmatched inbound mail (not from any tracked prospect -- inbox noise,
+ * mailbox-warmup pings, wrong-address typos, etc.) is intentionally
+ * excluded here even though it's still recorded in the Replies tab itself
+ * for audit purposes -- this view is specifically "who from my campaigns
+ * replied," not a general inbox viewer.
+ */
+function getRecentReplies(limit) {
+  var replies = sheetToObjects(SHEET_NAMES.REPLIES).filter(function (r) {
+    return r.Matched === 'Yes';
+  });
+  var campaigns = sheetToObjects(SHEET_NAMES.CAMPAIGNS);
+  var campaignNameById = {};
+  campaigns.forEach(function (c) { campaignNameById[c.CampaignID] = c.Name; });
+
+  replies.sort(function (a, b) {
+    return new Date(b.Timestamp).getTime() - new Date(a.Timestamp).getTime();
+  });
+
+  return replies.slice(0, limit || 25).map(function (r) {
+    return {
+      timestamp: r.Timestamp ? new Date(r.Timestamp).toISOString() : '',
+      senderEmail: r.SenderEmail || '',
+      prospectName: (r.ProspectName || '').trim(),
+      prospectEmail: r.ProspectEmail || '',
+      campaignName: campaignNameById[r.CampaignID] || '',
+      subject: r.Subject || '',
+      bodyPreview: r.BodyPreview || '',
+      matched: r.Matched === 'Yes'
+    };
+  });
+}

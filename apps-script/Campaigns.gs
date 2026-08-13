@@ -43,3 +43,22 @@ function campaignRemainingCapacity(campaign) {
 function isCampaignWithinSendWindow(campaign) {
   return isWithinSendWindow(campaign.SendWindowStart, campaign.SendWindowEnd);
 }
+
+/**
+ * All campaigns (not just Active ones -- you may want to add a prospect to
+ * a Paused campaign before flipping it live), with the sender's name
+ * resolved for display. Used to populate the Add Prospect form's dropdown.
+ */
+function getCampaignsForDropdown() {
+  var senders = sheetToObjects(SHEET_NAMES.SENDERS);
+  var senderNameById = {};
+  senders.forEach(function (s) { senderNameById[s.SenderID] = s.Name; });
+
+  return sheetToObjects(SHEET_NAMES.CAMPAIGNS).map(function (c) {
+    return {
+      campaignId: c.CampaignID,
+      name: c.Name,
+      senderName: senderNameById[c.SenderID] || '(unknown sender)'
+    };
+  });
+}

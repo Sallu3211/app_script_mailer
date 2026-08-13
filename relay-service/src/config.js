@@ -45,6 +45,12 @@ function loadConfig() {
 
   return {
     port: parseInt(process.env.PORT, 10) || 3000,
+    // Default stays 0.0.0.0 for platform-managed hosts (e.g. Railway) whose
+    // edge proxy needs to reach the container directly. When running behind
+    // a reverse proxy on the same box (Caddy on a VPS), set HOST=127.0.0.1
+    // so the raw HTTP port is only reachable from localhost -- otherwise
+    // it's directly internet-reachable in plaintext, bypassing TLS entirely.
+    host: process.env.HOST || '0.0.0.0',
     relaySharedSecret,
     appsScriptWebAppUrl,
     senders,

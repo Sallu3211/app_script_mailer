@@ -9,13 +9,14 @@
 
 const logger = require('./logger');
 
-async function reportReply(config, { senderEmail, fromEmail, subject, receivedAt }) {
+async function reportReply(config, { senderEmail, fromEmail, subject, receivedAt, bodyPreview }) {
   const payload = {
     secret: config.relaySharedSecret,
     senderEmail,
     fromEmail,
     subject: subject || '',
-    receivedAt: receivedAt || new Date().toISOString()
+    receivedAt: receivedAt || new Date().toISOString(),
+    bodyPreview: bodyPreview || ''
   };
 
   const attempts = 3;
