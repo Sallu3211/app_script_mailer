@@ -68,7 +68,7 @@ function computeNextSendDate(prospectId, currentStage) {
   var nextStage = getNextStage(prospectId, currentStage);
   if (nextStage === null) return null;
   var template = getTemplateForStage(prospectId, nextStage);
-  var delayDays = parseInt(template.DelayDaysFromPrevious, 10) || 0;
+  var delayDays = parseFloat(template.DelayDaysFromPrevious) || 0;
   return addDays(new Date(), delayDays);
 }
 
