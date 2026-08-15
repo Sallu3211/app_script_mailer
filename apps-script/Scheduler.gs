@@ -11,6 +11,11 @@ function runScheduler() {
     return;
   }
 
+  // Defensive, cheap, idempotent -- self-heals LastResetDate cells on any
+  // Sender/Campaign row appended since the last heal (appendRow doesn't
+  // inherit the Plain Text formatting applied to earlier rows).
+  fixLastResetDateColumnFormat_();
+
   var maxPerRun = parseInt(getSetting('MAX_EMAILS_PER_RUN'), 10) || 50;
   var sentThisRun = 0;
 

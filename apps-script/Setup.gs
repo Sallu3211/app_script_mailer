@@ -19,6 +19,7 @@ function setupSystem() {
   seedSampleData_();
   migrateTemplatesToProspectScoped_();
   fixSendWindowColumnFormat_();
+  fixLastResetDateColumnFormat_();
   installTriggers();
 
   // Remove the default "Sheet1" if it's empty and untouched.
@@ -301,6 +302,38 @@ function fixSendWindowColumnFormat_() {
     }
     if (endVal instanceof Date) {
       sheet.getRange(rowNum, endCol).setValue(normalizeTimeOfDay_(endVal));
+    }
+  });
+}
+
+/**
+ * Forces Senders!LastResetDate and Campaigns!LastResetDate to Plain Text
+ * formatting and self-heals any row already corrupted into a Date value --
+ * same failure class as fixSendWindowColumnFormat_ above: Sheets silently
+ * reinterprets a "yyyy-MM-dd" string as an internal date-serial using the
+ * SPREADSHEET's own locale timezone, not Settings!TIMEZONE. Left uncaught,
+ * isNewDay() reformats that Date using Settings!TIMEZONE and can land on
+ * the wrong calendar day permanently, making the scheduler think every run
+ * is a new day -- resetting SentToday to 0 before every single cycle
+ * instead of once per real day. Safe to re-run any time.
+ */
+function fixLastResetDateColumnFormat_() {
+  fixOneLastResetDateColumn_(SHEET_NAMES.SENDERS, COLUMNS.SENDERS);
+  fixOneLastResetDateColumn_(SHEET_NAMES.CAMPAIGNS, COLUMNS.CAMPAIGNS);
+}
+
+function fixOneLastResetDateColumn_(sheetName, columns) {
+  var sheet = getSpreadsheet().getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() < 2) return;
+
+  var col = columns.indexOf('LastResetDate') + 1;
+  var numRows = sheet.getLastRow() - 1;
+  sheet.getRange(2, col, numRows, 1).setNumberFormat('@');
+
+  var values = sheet.getRange(2, col, numRows, 1).getValues();
+  values.forEach(function (row, i) {
+    if (row[0] instanceof Date) {
+      sheet.getRange(i + 2, col).setValue(Utilities.formatDate(row[0], getSetting('TIMEZONE'), 'yyyy-MM-dd'));
     }
   });
 }
