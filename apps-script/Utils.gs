@@ -123,10 +123,13 @@ function isWithinSendWindow(startStr, endStr, tz) {
   return now >= start && now <= end;
 }
 
+/**
+ * Adds `days` (fractional allowed, e.g. 1/24 for a 1-hour delay) to `date`.
+ * Millisecond-based rather than setDate() so fractional values work --
+ * setDate() truncates non-integers, which silently no-ops sub-day delays.
+ */
 function addDays(date, days) {
-  var d = new Date(date.getTime());
-  d.setDate(d.getDate() + days);
-  return d;
+  return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
 function todayDateString(tz) {
