@@ -132,6 +132,18 @@ function addDays(date, days) {
   return new Date(date.getTime() + days * 24 * 60 * 60 * 1000);
 }
 
+/**
+ * Nudges `date` by a random +/- maxMinutes offset. Real people don't send
+ * a follow-up at the exact same second every cycle -- a perfectly fixed
+ * interval is itself a spam-filter signal, so scheduled send times get a
+ * small human-like wobble instead of landing on the exact same time
+ * every day.
+ */
+function addJitterMinutes_(date, maxMinutes) {
+  var jitterMs = (Math.random() * 2 - 1) * maxMinutes * 60 * 1000;
+  return new Date(date.getTime() + jitterMs);
+}
+
 function todayDateString(tz) {
   return Utilities.formatDate(new Date(), tz || getSetting('TIMEZONE'), 'yyyy-MM-dd');
 }

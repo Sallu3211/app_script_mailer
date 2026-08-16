@@ -39,6 +39,11 @@ var PROSPECT_ACTIVE_STATUSES = [PROSPECT_STATUS.PENDING, PROSPECT_STATUS.SCHEDUL
 
 var MAX_FOLLOWUPS = 10;
 
+// How far a scheduled send time can randomly drift from its exact computed
+// delay, in either direction. Keeps follow-up timing from landing on the
+// exact same second every cycle, which reads as robotic/automated.
+var SEND_TIME_JITTER_MINUTES = 7;
+
 var DEFAULT_SETTINGS = [
   ['RELAY_BASE_URL', ''],
   ['RELAY_SHARED_SECRET', ''],
