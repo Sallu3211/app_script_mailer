@@ -10,6 +10,7 @@ function onOpen() {
     .addItem('Run Scheduler Now', 'runScheduler')
     .addItem('Open Dashboard', 'showDashboardDialog_')
     .addItem('Add New Prospect', 'showAddProspectDialog_')
+    .addItem('Add Campaign (Wizard)', 'showCampaignWizardDialog_')
     .addSeparator()
     .addItem('Reinstall Trigger', 'installTriggers')
     .addToUi();
@@ -25,7 +26,27 @@ function showAddProspectDialog_() {
   SpreadsheetApp.getUi().showModalDialog(html, 'Add New Prospect');
 }
 
+function showCampaignWizardDialog_() {
+  var html = HtmlService.createTemplateFromFile('campaignWizard').evaluate().setWidth(720).setHeight(680);
+  SpreadsheetApp.getUi().showModalDialog(html, 'Add Campaign');
+}
+
+/**
+ * Public Web App URL, with ?page=wizard, for the "+ Add Campaign" link on
+ * the dashboard -- works the same whether the dashboard is opened from the
+ * Sheet menu or via the public /exec URL directly.
+ */
+function getWizardUrl() {
+  return ScriptApp.getService().getUrl() + '?page=wizard';
+}
+
 function doGet(e) {
+  if (e && e.parameter && e.parameter.page === 'wizard') {
+    return HtmlService.createTemplateFromFile('campaignWizard')
+      .evaluate()
+      .setTitle('Add Campaign')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
   return renderDashboard();
 }
 

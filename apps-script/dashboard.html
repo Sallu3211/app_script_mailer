@@ -41,6 +41,7 @@
 <div class="actions">
   <button id="runBtn" onclick="runNow()">Run Scheduler Now</button>
   <button class="secondary" onclick="openSheet()">Open Spreadsheet</button>
+  <button class="secondary" onclick="openWizard()">+ Add Campaign</button>
 </div>
 <div id="status"></div>
 
@@ -133,6 +134,10 @@
 
   function openSheet() {
     google.script.run.withSuccessHandler(function (url) { window.open(url, '_blank'); }).getSpreadsheetUrl();
+  }
+
+  function openWizard() {
+    google.script.run.withSuccessHandler(function (url) { window.open(url, '_blank'); }).getWizardUrl();
   }
 
   refresh();

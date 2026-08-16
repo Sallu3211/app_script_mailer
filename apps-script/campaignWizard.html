@@ -1,0 +1,430 @@
+<style>
+  body { font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #f6f7f9; margin: 0; padding: 24px; color: #1a1a1a; max-width: 640px; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 16px; margin: 0 0 14px; }
+  .sub { color: #666; font-size: 13px; margin-bottom: 20px; }
+  .steps { display: flex; gap: 6px; margin-bottom: 20px; }
+  .steps .step-dot { flex: 1; height: 4px; border-radius: 2px; background: #ddd; }
+  .steps .step-dot.active { background: #2d5bff; }
+  .steps .step-dot.done { background: #9fd8ae; }
+  .panel { background: white; border-radius: 10px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); margin-bottom: 16px; }
+  label { display: block; font-size: 12px; font-weight: 600; color: #444; margin: 12px 0 4px; }
+  label:first-child { margin-top: 0; }
+  input, select, textarea { width: 100%; box-sizing: border-box; padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; font-family: inherit; }
+  textarea { min-height: 90px; resize: vertical; }
+  .row { display: flex; gap: 10px; }
+  .row > div { flex: 1; }
+  .hint { font-size: 11px; color: #888; margin-top: 4px; }
+  .radio-row { display: flex; gap: 16px; font-size: 13px; margin-bottom: 10px; }
+  .radio-row label { display: flex; align-items: center; gap: 6px; font-weight: 400; margin: 0; }
+  .radio-row input { width: auto; }
+  button { background: #2d5bff; color: white; border: none; border-radius: 6px; padding: 10px 18px; font-size: 13px; cursor: pointer; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  button.secondary { background: white; color: #2d5bff; border: 1px solid #2d5bff; }
+  button.small { padding: 6px 12px; font-size: 12px; }
+  .actions { display: flex; gap: 10px; margin-top: 16px; }
+  #status { font-size: 13px; margin-top: 10px; }
+  #status.error { color: #a02020; }
+  #status.success { color: #1a6b32; }
+  #status.warn { color: #7a5c00; }
+  .stage-card { border: 1px solid #eee; border-radius: 8px; padding: 12px; margin-top: 10px; background: #fafafa; }
+  .stage-card .stage-label { font-size: 12px; font-weight: 600; color: #2d5bff; margin-bottom: 8px; }
+  .prospect-list { list-style: none; padding: 0; margin: 12px 0 0; }
+  .prospect-list li { font-size: 13px; padding: 8px 10px; background: #f6f7f9; border-radius: 6px; margin-bottom: 6px; }
+  .config-box { background: #1a1a1a; color: #d9f7d9; font-family: monospace; font-size: 11px; padding: 10px; border-radius: 6px; white-space: pre-wrap; word-break: break-all; }
+  .hidden { display: none; }
+</style>
+
+<h1>Add Campaign</h1>
+<div class="sub">Sender &rarr; Campaign &rarr; Prospects &amp; templates &rarr; Start. Same data this writes by hand into the Sheet -- nothing here bypasses it.</div>
+
+<div class="steps">
+  <div class="step-dot" id="dot0"></div>
+  <div class="step-dot" id="dot1"></div>
+  <div class="step-dot" id="dot2"></div>
+  <div class="step-dot" id="dot3"></div>
+</div>
+
+<!-- STEP 0: SENDER -->
+<div class="panel" id="step0">
+  <h2>Step 1 of 4 &mdash; Sender</h2>
+
+  <div class="radio-row">
+    <label><input type="radio" name="senderMode" value="existing" checked onchange="toggleSenderMode()"> Use an existing sender</label>
+    <label><input type="radio" name="senderMode" value="new" onchange="toggleSenderMode()"> Add a new sender</label>
+  </div>
+
+  <div id="existingSenderBlock">
+    <label>Sender</label>
+    <select id="existingSenderId"></select>
+    <div class="hint" id="existingSenderHint"></div>
+  </div>
+
+  <div id="newSenderBlock" class="hidden">
+    <div class="row">
+      <div><label>Name</label><input id="senderName" placeholder="e.g. James" /></div>
+      <div><label>Daily Limit</label><input id="senderDailyLimit" type="number" value="50" /></div>
+    </div>
+    <label>Mailbox Email *</label>
+    <input id="senderEmail" type="email" placeholder="name@yourdomain.com" />
+    <div class="row">
+      <div><label>SMTP Host</label><input id="smtpHost" value="smtp.titan.email" /></div>
+      <div><label>SMTP Port</label><input id="smtpPort" type="number" value="465" /></div>
+    </div>
+    <div class="row">
+      <div><label>IMAP Host</label><input id="imapHost" value="imap.titan.email" /></div>
+      <div><label>IMAP Port</label><input id="imapPort" type="number" value="993" /></div>
+    </div>
+    <label>Mailbox Password *</label>
+    <input id="senderPassword" type="password" />
+    <div class="hint">This password is never written to the Sheet. Submitting creates the sender as <b>Pending</b> (won't send yet) and gives you a copy-paste block below to hand off so the relay's real config gets updated -- that step happens outside the Sheet.</div>
+
+    <div id="senderConfigOutput" class="hidden">
+      <label>Send this to whoever configures the relay</label>
+      <div class="config-box" id="senderConfigBox"></div>
+    </div>
+  </div>
+
+  <div id="status0"></div>
+  <div class="actions">
+    <button onclick="submitStep0()" id="btn0">Continue</button>
+  </div>
+</div>
+
+<!-- STEP 1: CAMPAIGN -->
+<div class="panel hidden" id="step1">
+  <h2>Step 2 of 4 &mdash; Campaign</h2>
+  <label>Campaign Name</label>
+  <input id="campaignName" placeholder="e.g. Q3 Outreach" />
+  <div class="row">
+    <div><label>Daily Limit</label><input id="campaignDailyLimit" type="number" value="30" /></div>
+  </div>
+  <div class="row">
+    <div><label>Send Window Start</label><input id="sendWindowStart" value="09:00" /></div>
+    <div><label>Send Window End</label><input id="sendWindowEnd" value="17:00" /></div>
+  </div>
+  <div class="hint">24h "HH:mm". Use 00:00 / 23:59 to allow sending any time of day.</div>
+  <div id="status1"></div>
+  <div class="actions">
+    <button class="secondary" onclick="goToStep(0)">Back</button>
+    <button onclick="submitStep1()" id="btn1">Continue</button>
+  </div>
+</div>
+
+<!-- STEP 2: PROSPECTS + TEMPLATES -->
+<div class="panel hidden" id="step2">
+  <h2>Step 3 of 4 &mdash; Prospects &amp; templates</h2>
+
+  <div class="row">
+    <div><label>First Name</label><input id="prFirstName" /></div>
+    <div><label>Last Name</label><input id="prLastName" /></div>
+  </div>
+  <label>Company</label>
+  <input id="prCompany" />
+  <label>Email *</label>
+  <input id="prEmail" type="email" />
+  <div class="row">
+    <div><label>Custom 1</label><input id="prCustom1" /></div>
+    <div><label>Custom 2</label><input id="prCustom2" /></div>
+  </div>
+
+  <div id="stagesContainer"></div>
+  <div class="actions">
+    <button class="secondary small" onclick="addStage()" id="addStageBtn">+ Add follow-up</button>
+  </div>
+
+  <div id="status2"></div>
+  <div class="actions">
+    <button onclick="submitProspect()" id="addProspectBtn">Add Prospect</button>
+  </div>
+
+  <ul class="prospect-list" id="prospectList"></ul>
+
+  <div class="actions">
+    <button class="secondary" onclick="goToStep(1)">Back</button>
+    <button onclick="goToStep(3)" id="btn2continue" disabled>Continue (add at least 1 prospect)</button>
+  </div>
+</div>
+
+<!-- STEP 3: REVIEW + START -->
+<div class="panel hidden" id="step3">
+  <h2>Step 4 of 4 &mdash; Review &amp; start</h2>
+  <div id="reviewBox"></div>
+  <div id="status3"></div>
+  <div class="actions">
+    <button class="secondary" onclick="goToStep(2)">Back</button>
+    <button onclick="startCampaign()" id="startBtn">Start Campaign</button>
+  </div>
+</div>
+
+<script>
+  var state = {
+    senderId: null,
+    campaignId: null,
+    campaignName: '',
+    senderLabel: '',
+    prospects: [] // {email, stagesCreated}
+  };
+
+  var DOTS = ['dot0', 'dot1', 'dot2', 'dot3'];
+  var STEPS = ['step0', 'step1', 'step2', 'step3'];
+
+  function goToStep(n) {
+    STEPS.forEach(function (id, i) { document.getElementById(id).classList.toggle('hidden', i !== n); });
+    DOTS.forEach(function (id, i) {
+      var el = document.getElementById(id);
+      el.className = 'step-dot' + (i < n ? ' done' : (i === n ? ' active' : ''));
+    });
+    if (n === 3) renderReview();
+  }
+
+  function setStatus(el, cls, msg) {
+    var s = document.getElementById(el);
+    s.className = cls;
+    s.innerText = msg;
+  }
+
+  // ---------- STEP 0: SENDER ----------
+  function toggleSenderMode() {
+    var mode = document.querySelector('input[name="senderMode"]:checked').value;
+    document.getElementById('existingSenderBlock').classList.toggle('hidden', mode !== 'existing');
+    document.getElementById('newSenderBlock').classList.toggle('hidden', mode !== 'new');
+  }
+
+  function loadSenders() {
+    google.script.run.withSuccessHandler(function (senders) {
+      var select = document.getElementById('existingSenderId');
+      if (!senders || senders.length === 0) {
+        select.innerHTML = '<option value="">No senders yet -- switch to "Add a new sender"</option>';
+        return;
+      }
+      select.innerHTML = senders.map(function (s) {
+        return '<option value="' + s.senderId + '" data-status="' + s.status + '" data-label="' + s.name + ' <' + s.email + '>">' +
+          s.name + ' &lt;' + s.email + '&gt; (' + s.status + ')</option>';
+      }).join('');
+      updateExistingSenderHint();
+    }).wizardGetSenders();
+  }
+
+  function updateExistingSenderHint() {
+    var select = document.getElementById('existingSenderId');
+    var opt = select.options[select.selectedIndex];
+    var hint = document.getElementById('existingSenderHint');
+    if (opt && opt.dataset.status !== 'Active') {
+      hint.innerText = 'This sender is "' + opt.dataset.status + '", not Active -- a campaign using it won\'t actually send until it\'s activated.';
+    } else {
+      hint.innerText = '';
+    }
+  }
+
+  var newSenderSubmitted = false;
+
+  function submitStep0() {
+    var mode = document.querySelector('input[name="senderMode"]:checked').value;
+    var statusEl = 'status0';
+
+    if (mode === 'existing') {
+      var select = document.getElementById('existingSenderId');
+      if (!select.value) { setStatus(statusEl, 'error', 'Pick a sender.'); return; }
+      state.senderId = select.value;
+      state.senderLabel = select.options[select.selectedIndex].dataset.label;
+      goToStep(1);
+      return;
+    }
+
+    // "new" mode: once already submitted successfully, Continue just advances.
+    if (newSenderSubmitted) { goToStep(1); return; }
+
+    var email = document.getElementById('senderEmail').value.trim();
+    var password = document.getElementById('senderPassword').value;
+    if (!email) { setStatus(statusEl, 'error', 'Mailbox email is required.'); return; }
+    if (!password) { setStatus(statusEl, 'error', 'Mailbox password is required (needed for the config block below).'); return; }
+
+    var data = {
+      name: document.getElementById('senderName').value.trim() || email,
+      email: email,
+      dailyLimit: document.getElementById('senderDailyLimit').value,
+      smtpHost: document.getElementById('smtpHost').value.trim(),
+      smtpPort: document.getElementById('smtpPort').value,
+      imapHost: document.getElementById('imapHost').value.trim(),
+      imapPort: document.getElementById('imapPort').value,
+      password: password
+    };
+
+    document.getElementById('btn0').disabled = true;
+    setStatus(statusEl, '', 'Adding sender...');
+
+    google.script.run
+      .withSuccessHandler(function (result) {
+        state.senderId = result.senderId;
+        state.senderLabel = data.name + ' <' + data.email + '>';
+        newSenderSubmitted = true;
+        document.getElementById('senderConfigBox').innerText = result.configSnippet;
+        document.getElementById('senderConfigOutput').classList.remove('hidden');
+        setStatus(statusEl, 'success', 'Sender added as Pending (id ' + result.senderId + '). Copy the block above to whoever updates the relay. Click Continue when ready -- you don\'t have to wait for that to happen first.');
+        document.getElementById('btn0').disabled = false;
+        document.getElementById('btn0').innerText = 'Continue';
+      })
+      .withFailureHandler(function (err) {
+        setStatus(statusEl, 'error', 'Error: ' + err.message);
+        document.getElementById('btn0').disabled = false;
+      })
+      .wizardAddSender(data);
+  }
+
+  // ---------- STEP 1: CAMPAIGN ----------
+  function submitStep1() {
+    var name = document.getElementById('campaignName').value.trim();
+    if (!name) { setStatus('status1', 'error', 'Campaign name is required.'); return; }
+
+    var data = {
+      name: name,
+      senderId: state.senderId,
+      dailyLimit: document.getElementById('campaignDailyLimit').value,
+      sendWindowStart: document.getElementById('sendWindowStart').value.trim(),
+      sendWindowEnd: document.getElementById('sendWindowEnd').value.trim()
+    };
+
+    document.getElementById('btn1').disabled = true;
+    setStatus('status1', '', 'Creating campaign...');
+
+    google.script.run
+      .withSuccessHandler(function (result) {
+        state.campaignId = result.campaignId;
+        state.campaignName = name;
+        setStatus('status1', 'success', 'Campaign created (id ' + result.campaignId + ').');
+        document.getElementById('btn1').disabled = false;
+        goToStep(2);
+      })
+      .withFailureHandler(function (err) {
+        setStatus('status1', 'error', 'Error: ' + err.message);
+        document.getElementById('btn1').disabled = false;
+      })
+      .wizardAddCampaign(data);
+  }
+
+  // ---------- STEP 2: PROSPECTS + TEMPLATES ----------
+  var stageCount = 0;
+
+  function addStage() {
+    if (stageCount >= 10) { return; } // 10 follow-ups max, Initial is separate
+    stageCount++;
+    var container = document.getElementById('stagesContainer');
+    var div = document.createElement('div');
+    div.className = 'stage-card';
+    div.dataset.stage = stageCount;
+    div.innerHTML =
+      '<div class="stage-label">Follow-up ' + stageCount + '</div>' +
+      '<label>Subject</label><input class="stageSubject" />' +
+      '<label>Body</label><textarea class="stageBody"></textarea>' +
+      '<label>Delay since previous email (days)</label>' +
+      '<input class="stageDelay" type="number" step="0.001" value="3" />' +
+      '<div class="hint">e.g. 2 = 2 days, 0.0417 &asymp; 1 hour, 0.021 &asymp; 30 min</div>';
+    container.appendChild(div);
+    if (stageCount >= 10) { document.getElementById('addStageBtn').disabled = true; }
+  }
+
+  function resetStages() {
+    stageCount = 0;
+    document.getElementById('stagesContainer').innerHTML =
+      '<div class="stage-card"><div class="stage-label">Initial (sends immediately once the campaign is due)</div>' +
+      '<label>Subject</label><input id="initialSubject" />' +
+      '<label>Body</label><textarea id="initialBody"></textarea></div>';
+    document.getElementById('addStageBtn').disabled = false;
+  }
+
+  function submitProspect() {
+    var email = document.getElementById('prEmail').value.trim();
+    if (!email) { setStatus('status2', 'error', 'Prospect email is required.'); return; }
+
+    var sequence = [{
+      subject: document.getElementById('initialSubject').value,
+      body: document.getElementById('initialBody').value,
+      delayDays: 0
+    }];
+    document.querySelectorAll('.stage-card[data-stage]').forEach(function (card) {
+      sequence.push({
+        subject: card.querySelector('.stageSubject').value,
+        body: card.querySelector('.stageBody').value,
+        delayDays: card.querySelector('.stageDelay').value
+      });
+    });
+
+    var data = {
+      campaignId: state.campaignId,
+      firstName: document.getElementById('prFirstName').value.trim(),
+      lastName: document.getElementById('prLastName').value.trim(),
+      company: document.getElementById('prCompany').value.trim(),
+      email: email,
+      custom1: document.getElementById('prCustom1').value.trim(),
+      custom2: document.getElementById('prCustom2').value.trim(),
+      sequence: sequence
+    };
+
+    document.getElementById('addProspectBtn').disabled = true;
+    setStatus('status2', '', 'Adding...');
+
+    google.script.run
+      .withSuccessHandler(function (result) {
+        state.prospects.push({ email: email, stagesCreated: result.stagesCreated });
+        renderProspectList();
+        setStatus('status2', 'success', 'Added ' + email + ' with ' + result.stagesCreated + ' email(s).');
+        document.getElementById('addProspectBtn').disabled = false;
+        document.getElementById('btn2continue').disabled = false;
+        document.getElementById('btn2continue').innerText = 'Continue';
+        ['prFirstName', 'prLastName', 'prCompany', 'prEmail', 'prCustom1', 'prCustom2'].forEach(function (id) {
+          document.getElementById(id).value = '';
+        });
+        resetStages();
+      })
+      .withFailureHandler(function (err) {
+        setStatus('status2', 'error', 'Error: ' + err.message);
+        document.getElementById('addProspectBtn').disabled = false;
+      })
+      .wizardAddProspectWithTemplates(data);
+  }
+
+  function renderProspectList() {
+    document.getElementById('prospectList').innerHTML = state.prospects.map(function (p) {
+      return '<li>' + p.email + ' &mdash; ' + p.stagesCreated + ' email(s)</li>';
+    }).join('');
+  }
+
+  // ---------- STEP 3: REVIEW + START ----------
+  function renderReview() {
+    document.getElementById('reviewBox').innerHTML =
+      '<div class="row"><div><label>Campaign</label>' + state.campaignName + '</div>' +
+      '<div><label>Sender</label>' + state.senderLabel + '</div></div>' +
+      '<label>Prospects (' + state.prospects.length + ')</label>' +
+      '<ul class="prospect-list">' + state.prospects.map(function (p) {
+        return '<li>' + p.email + ' &mdash; ' + p.stagesCreated + ' email(s)</li>';
+      }).join('') + '</ul>' +
+      '<div class="hint">Starting marks the campaign Active. It won\'t send instantly -- the normal scheduler trigger picks it up on its next run.</div>';
+  }
+
+  function startCampaign() {
+    document.getElementById('startBtn').disabled = true;
+    setStatus('status3', '', 'Starting...');
+    google.script.run
+      .withSuccessHandler(function (result) {
+        if (result.warning) {
+          setStatus('status3', 'warn', 'Campaign started, but: ' + result.warning);
+        } else {
+          setStatus('status3', 'success', 'Campaign started. It\'ll begin sending on the scheduler\'s next run.');
+        }
+        document.getElementById('startBtn').innerText = 'Started';
+      })
+      .withFailureHandler(function (err) {
+        setStatus('status3', 'error', 'Error: ' + err.message);
+        document.getElementById('startBtn').disabled = false;
+      })
+      .wizardStartCampaign(state.campaignId);
+  }
+
+  // ---------- init ----------
+  document.getElementById('existingSenderId').addEventListener('change', updateExistingSenderHint);
+
+  loadSenders();
+  resetStages();
+  goToStep(0);
+</script>
