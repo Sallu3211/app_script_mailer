@@ -177,7 +177,7 @@ function ensureBulkImportSheet_() {
   if (sheet) return sheet;
 
   var stageHeaders = [];
-  for (var s = 0; s <= 3; s++) {
+  for (var s = 0; s <= MAX_FOLLOWUPS; s++) {
     stageHeaders.push('Stage' + s + 'Subject', 'Stage' + s + 'Body');
     if (s > 0) stageHeaders.push('Stage' + s + 'DelayDays');
   }
@@ -198,8 +198,6 @@ function ensureBulkImportSheet_() {
     Stage0Subject: 'Quick idea for {{company}}',
     Stage0Body: 'Hi {{first_name}}, I noticed {{custom1}}...',
     Stage1Subject: 'Following up', Stage1Body: 'Hi {{first_name}}, just checking in...', Stage1DelayDays: 2,
-    Stage2Subject: '', Stage2Body: '', Stage2DelayDays: '',
-    Stage3Subject: '', Stage3Body: '', Stage3DelayDays: '',
     ImportStatus: 'Example row -- edit or delete before importing'
   };
   sheet.getRange(2, 1, 1, headers.length).setValues([headers.map(function (h) { return example.hasOwnProperty(h) ? example[h] : ''; })]);
