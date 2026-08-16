@@ -14,6 +14,7 @@ function setupSystem() {
   createSheetIfMissing_(SHEET_NAMES.TEMPLATES, COLUMNS.TEMPLATES);
   createSheetIfMissing_(SHEET_NAMES.LOGS, COLUMNS.LOGS);
   createSheetIfMissing_(SHEET_NAMES.REPLIES, COLUMNS.REPLIES);
+  ensureBulkImportSheet_();
 
   seedSettings_();
   seedSampleData_();

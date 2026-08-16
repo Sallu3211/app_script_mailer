@@ -38,13 +38,35 @@
 <h1>Add Campaign</h1>
 <div class="sub">Sender &rarr; Campaign &rarr; Prospects &amp; templates &rarr; Start. Same data this writes by hand into the Sheet -- nothing here bypasses it.</div>
 
-<div class="steps">
+<div class="panel" id="modePanel">
+  <div class="radio-row">
+    <label><input type="radio" name="wizardMode" value="guided" checked onchange="toggleWizardMode()"> Guided setup (one campaign at a time)</label>
+    <label><input type="radio" name="wizardMode" value="bulk" onchange="toggleWizardMode()"> Bulk import (many prospects at once, from a Sheet template)</label>
+  </div>
+</div>
+
+<!-- BULK IMPORT -->
+<div class="panel hidden" id="bulkPanel">
+  <h2>Bulk import</h2>
+  <p class="hint" style="font-size:13px;color:#444;">
+    One row per prospect in the "Bulk Import" tab &mdash; each row carries its own Sender (email/password/port), Campaign name, and full Initial + follow-up content. Rows that share the same Sender email + Campaign name are grouped together automatically, so 50 prospects for one campaign only creates that sender/campaign once, not 50 times. New senders still start <b>Pending</b> (same rule as guided setup) until their credentials are confirmed on the relay.
+  </p>
+  <div class="actions">
+    <button class="secondary" onclick="openBulkTemplate()">Create / Open Bulk Import Tab</button>
+    <button onclick="runBulkImport()" id="bulkImportBtn">Import Now</button>
+  </div>
+  <div id="bulkStatus"></div>
+  <div id="bulkResults"></div>
+</div>
+
+<div class="steps" id="stepsBar">
   <div class="step-dot" id="dot0"></div>
   <div class="step-dot" id="dot1"></div>
   <div class="step-dot" id="dot2"></div>
   <div class="step-dot" id="dot3"></div>
 </div>
 
+<div id="guidedSteps">
 <!-- STEP 0: SENDER -->
 <div class="panel" id="step0">
   <h2>Step 1 of 4 &mdash; Sender</h2>
@@ -156,8 +178,55 @@
     <button onclick="startCampaign()" id="startBtn">Start Campaign</button>
   </div>
 </div>
+</div><!-- /guidedSteps -->
 
 <script>
+  function toggleWizardMode() {
+    var mode = document.querySelector('input[name="wizardMode"]:checked').value;
+    document.getElementById('guidedSteps').classList.toggle('hidden', mode !== 'guided');
+    document.getElementById('stepsBar').classList.toggle('hidden', mode !== 'guided');
+    document.getElementById('bulkPanel').classList.toggle('hidden', mode !== 'bulk');
+  }
+
+  function openBulkTemplate() {
+    google.script.run.withSuccessHandler(function (result) { window.open(result.url, '_blank'); }).wizardGetBulkImportTemplate();
+  }
+
+  function runBulkImport() {
+    document.getElementById('bulkImportBtn').disabled = true;
+    document.getElementById('bulkStatus').innerText = 'Importing...';
+    document.getElementById('bulkResults').innerHTML = '';
+    google.script.run
+      .withSuccessHandler(function (r) {
+        document.getElementById('bulkImportBtn').disabled = false;
+        var hasErrors = r.errors && r.errors.length > 0;
+        document.getElementById('bulkStatus').className = hasErrors ? 'warn' : 'success';
+        document.getElementById('bulkStatus').innerText =
+          r.sendersCreated.length + ' sender(s), ' + r.campaignsCreated.length + ' campaign(s), ' +
+          r.prospectsCreated.length + ' prospect(s) imported' +
+          (r.skipped.length ? ', ' + r.skipped.length + ' row(s) already imported (skipped)' : '') +
+          (hasErrors ? ', ' + r.errors.length + ' error(s)' : '') + '.';
+
+        var html = '';
+        if (r.sendersCreated.length) {
+          html += '<label>New sender config (send to whoever configures the relay)</label>';
+          r.sendersCreated.forEach(function (s) {
+            html += '<div class="config-box">' + s.configSnippet + '</div>';
+          });
+        }
+        if (hasErrors) {
+          html += '<label>Errors</label><ul class="prospect-list">' +
+            r.errors.map(function (e) { return '<li>' + e + '</li>'; }).join('') + '</ul>';
+        }
+        document.getElementById('bulkResults').innerHTML = html;
+      })
+      .withFailureHandler(function (err) {
+        document.getElementById('bulkImportBtn').disabled = false;
+        document.getElementById('bulkStatus').className = 'error';
+        document.getElementById('bulkStatus').innerText = 'Error: ' + err.message;
+      })
+      .wizardBulkImport();
+  }
   var state = {
     senderId: null,
     campaignId: null,
