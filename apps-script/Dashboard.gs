@@ -14,8 +14,13 @@ function getDashboardStats() {
   var senders = sheetToObjects(SHEET_NAMES.SENDERS);
   var prospects = sheetToObjects(SHEET_NAMES.PROSPECTS);
 
+  // SentToday only actually resets when the scheduler processes that
+  // campaign (see resetCampaignDailyCounterIfNeeded) -- a Paused campaign
+  // is never processed, so its counter can sit frozen on a prior day's
+  // total. Treat a stale (not-actually-today) count as 0 for display so
+  // this tile never shows yesterday's number as if it were today's.
   var emailsSentToday = campaigns.reduce(function (sum, c) {
-    return sum + (parseInt(c.SentToday, 10) || 0);
+    return sum + (isNewDay(c.LastResetDate) ? 0 : (parseInt(c.SentToday, 10) || 0));
   }, 0);
 
   var pending = prospects.filter(function (p) {
