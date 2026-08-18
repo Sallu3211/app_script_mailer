@@ -78,7 +78,9 @@
 
 <div class="nav" id="nav"></div>
 
-<h2>Campaigns</h2>
+<h2>
+  <span>Campaigns <span id="campaignsFilterLabel"></span></span>
+</h2>
 <table id="campaignsTable">
   <thead><tr><th>Name</th><th>Sender</th><th>Status</th><th>Sent / Limit</th><th>Prospects</th><th></th></tr></thead>
   <tbody id="campaignsBody"></tbody>
@@ -101,15 +103,15 @@
 
 <script>
   var TILE_DEFS = [
-    ['activeCampaigns', 'Active Campaigns', null],
-    ['totalCampaigns', 'Total Campaigns', null],
-    ['totalSenders', 'Total Senders', null],
-    ['totalProspects', 'Total Prospects', null],
-    ['emailsSentToday', 'Sent Today', null],
-    ['pendingEmails', 'Pending / Scheduled', 'Pending'],
-    ['replies', 'Replies', 'Replied'],
-    ['stoppedFollowups', 'Paused / Bounced', 'StoppedFollowups'],
-    ['completed', 'Completed', 'Completed']
+    ['activeCampaigns', 'Active Campaigns', 'campaigns:Active'],
+    ['totalCampaigns', 'Total Campaigns', 'campaigns:All'],
+    ['totalSenders', 'Total Senders', 'senders'],
+    ['totalProspects', 'Total Prospects', 'prospects:All'],
+    ['emailsSentToday', 'Sent Today', 'sentToday'],
+    ['pendingEmails', 'Pending / Scheduled', 'prospects:Pending'],
+    ['replies', 'Replies', 'prospects:Replied'],
+    ['stoppedFollowups', 'Paused / Bounced', 'prospects:StoppedFollowups'],
+    ['completed', 'Completed', 'prospects:Completed']
   ];
 
   var campaignNameById = {};
@@ -128,11 +130,27 @@
     tilesEl.innerHTML = '';
     TILE_DEFS.forEach(function (def) {
       var tile = document.createElement('div');
-      tile.className = 'tile' + (def[2] ? '' : ' static');
+      tile.className = 'tile';
       tile.innerHTML = '<div class="value">' + stats[def[0]] + '</div><div class="label">' + def[1] + '</div>';
-      if (def[2]) tile.onclick = function () { openStatusDrawer(def[2], def[1]); };
+      tile.onclick = function () { handleTileClick(def[2], def[1]); };
       tilesEl.appendChild(tile);
     });
+  }
+
+  function handleTileClick(action, label) {
+    var parts = action.split(':');
+    if (parts[0] === 'campaigns') {
+      document.getElementById('campaignsTable').scrollIntoView({ behavior: 'smooth', block: 'start' });
+      applyCampaignsFilter(parts[1]);
+    } else if (parts[0] === 'senders') {
+      openDrawer('Senders');
+      google.script.run.withSuccessHandler(renderSenders).getSendersList();
+    } else if (parts[0] === 'sentToday') {
+      openDrawer('Sent Today');
+      google.script.run.withSuccessHandler(renderSentLog).getTodaysSentLog();
+    } else if (parts[0] === 'prospects') {
+      openStatusDrawer(parts[1], label);
+    }
   }
 
   function escapeHtml(s) {
@@ -142,7 +160,11 @@
   }
 
   // ---------- CAMPAIGNS TABLE ----------
+  var lastCampaigns = [];
+  var campaignsFilterStatus = 'All';
+
   function renderCampaigns(campaigns) {
+    lastCampaigns = campaigns;
     campaignNameById = {};
     campaigns.forEach(function (c) { campaignNameById[c.campaignId] = c.name; });
 
@@ -153,9 +175,22 @@
     }).join('');
     filterSelect.value = currentFilter;
 
+    renderCampaignsTable();
+  }
+
+  function applyCampaignsFilter(status) {
+    campaignsFilterStatus = status;
+    var label = document.getElementById('campaignsFilterLabel');
+    label.innerHTML = status === 'All' ? '' : '(' + status + ' only &middot; <a href="#" onclick="applyCampaignsFilter(\'All\'); return false;">show all</a>)';
+    renderCampaignsTable();
+  }
+
+  function renderCampaignsTable() {
+    var campaigns = campaignsFilterStatus === 'All' ? lastCampaigns : lastCampaigns.filter(function (c) { return c.status === campaignsFilterStatus; });
+
     var body = document.getElementById('campaignsBody');
     if (!campaigns.length) {
-      body.innerHTML = '<tr><td colspan="6" class="empty">No campaigns yet. Use "+ Add Campaign" above.</td></tr>';
+      body.innerHTML = '<tr><td colspan="6" class="empty">' + (lastCampaigns.length ? 'No campaigns match this filter.' : 'No campaigns yet. Use "+ Add Campaign" above.') + '</td></tr>';
       return;
     }
     body.innerHTML = campaigns.map(function (c) {
@@ -234,6 +269,37 @@
         '<div class="p-meta">' + escapeHtml(p.email) + (p.company ? ' &middot; ' + escapeHtml(p.company) : '') + '</div>' +
         '<div class="p-meta">Stage ' + p.stage + (next ? ' &middot; next: ' + escapeHtml(next) : '') + '</div>' +
         (p.lastError ? '<div class="p-error">' + escapeHtml(p.lastError) + '</div>' : '') +
+        '</div>';
+    }).join('');
+  }
+
+  function renderSenders(senders) {
+    var body = document.getElementById('drawerBody');
+    if (!senders || senders.length === 0) {
+      body.innerHTML = '<div class="empty">No senders yet.</div>';
+      return;
+    }
+    body.innerHTML = senders.map(function (s) {
+      return '<div class="prospect-card">' +
+        '<div class="p-top"><span>' + escapeHtml(s.name) + '</span><span class="badge ' + s.status + '">' + s.status + '</span></div>' +
+        '<div class="p-meta">' + escapeHtml(s.email) + '</div>' +
+        '<div class="p-meta">Sent today: ' + s.sentToday + ' / ' + s.dailyLimit + '</div>' +
+        '</div>';
+    }).join('');
+  }
+
+  function renderSentLog(entries) {
+    var body = document.getElementById('drawerBody');
+    if (!entries || entries.length === 0) {
+      body.innerHTML = '<div class="empty">Nothing sent yet today.</div>';
+      return;
+    }
+    body.innerHTML = entries.map(function (e) {
+      var when = e.timestamp ? new Date(e.timestamp).toLocaleTimeString() : '';
+      return '<div class="prospect-card">' +
+        '<div class="p-top"><span>' + escapeHtml(e.prospectEmail) + '</span><span class="p-meta">' + when + '</span></div>' +
+        '<div class="p-meta">' + escapeHtml(e.campaignName) + ' &middot; stage ' + e.stage + '</div>' +
+        '<div class="p-meta">' + escapeHtml(e.subject) + '</div>' +
         '</div>';
     }).join('');
   }

@@ -128,6 +128,52 @@ function getCampaignsList() {
   });
 }
 
+/**
+ * Sender list for the "Total Senders" tile's drill-down -- name, email,
+ * status, and today's send count, without opening the Sheet.
+ */
+function getSendersList() {
+  return sheetToObjects(SHEET_NAMES.SENDERS).map(function (s) {
+    return {
+      senderId: s.SenderID,
+      name: s.Name,
+      email: s.Email,
+      status: s.Status,
+      dailyLimit: parseInt(s.DailyLimit, 10) || 0,
+      sentToday: isNewDay(s.LastResetDate) ? 0 : (parseInt(s.SentToday, 10) || 0)
+    };
+  });
+}
+
+/**
+ * Successful sends from today (any campaign/sender), for the "Sent Today"
+ * tile's drill-down. Newest first.
+ */
+function getTodaysSentLog() {
+  var today = todayDateString();
+  var campaigns = sheetToObjects(SHEET_NAMES.CAMPAIGNS);
+  var campaignNameById = {};
+  campaigns.forEach(function (c) { campaignNameById[c.CampaignID] = c.Name; });
+
+  var rows = sheetToObjects(SHEET_NAMES.LOGS).filter(function (r) {
+    if (r.Status !== 'Success') return false;
+    var ts = r.Timestamp instanceof Date ? r.Timestamp : new Date(r.Timestamp);
+    return Utilities.formatDate(ts, getSetting('TIMEZONE'), 'yyyy-MM-dd') === today;
+  });
+
+  rows.sort(function (a, b) { return new Date(b.Timestamp).getTime() - new Date(a.Timestamp).getTime(); });
+
+  return rows.map(function (r) {
+    return {
+      timestamp: r.Timestamp ? new Date(r.Timestamp).toISOString() : '',
+      prospectEmail: r.ProspectEmail || '',
+      campaignName: campaignNameById[r.CampaignID] || '',
+      subject: r.Subject || '',
+      stage: r.Stage
+    };
+  });
+}
+
 function prospectSummary_(p) {
   return {
     prospectId: p.ProspectID,
@@ -163,6 +209,7 @@ function getProspectsByStatus(statusGroup, campaignId) {
   return sheetToObjects(SHEET_NAMES.PROSPECTS)
     .filter(function (p) {
       if (campaignId && p.CampaignID !== campaignId) return false;
+      if (statusGroup === 'All') return true;
       if (statusGroup === 'Pending') return PROSPECT_ACTIVE_STATUSES.indexOf(p.Status) !== -1;
       if (statusGroup === 'StoppedFollowups') return p.Status === PROSPECT_STATUS.PAUSED || p.Status === PROSPECT_STATUS.BOUNCED;
       return p.Status === statusGroup;

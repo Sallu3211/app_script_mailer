@@ -36,28 +36,7 @@
 </style>
 
 <h1>Add Campaign</h1>
-<div class="sub">Sender &rarr; Campaign &rarr; Prospects &amp; templates &rarr; Start. Same data this writes by hand into the Sheet -- nothing here bypasses it.</div>
-
-<div class="panel" id="modePanel">
-  <div class="radio-row">
-    <label><input type="radio" name="wizardMode" value="guided" checked onchange="toggleWizardMode()"> Guided setup (one campaign at a time)</label>
-    <label><input type="radio" name="wizardMode" value="bulk" onchange="toggleWizardMode()"> Bulk import (many prospects at once, from a Sheet template)</label>
-  </div>
-</div>
-
-<!-- BULK IMPORT -->
-<div class="panel hidden" id="bulkPanel">
-  <h2>Bulk import</h2>
-  <p class="hint" style="font-size:13px;color:#444;">
-    One row per prospect in the "Bulk Import" tab &mdash; each row carries its own Sender (email/password/port), Campaign name, and full Initial + follow-up content. Rows that share the same Sender email + Campaign name are grouped together automatically, so 50 prospects for one campaign only creates that sender/campaign once, not 50 times. New senders still start <b>Pending</b> (same rule as guided setup) until their credentials are confirmed on the relay.
-  </p>
-  <div class="actions">
-    <button class="secondary" onclick="openBulkTemplate()">Create / Open Bulk Import Tab</button>
-    <button onclick="runBulkImport()" id="bulkImportBtn">Import Now</button>
-  </div>
-  <div id="bulkStatus"></div>
-  <div id="bulkResults"></div>
-</div>
+<div class="sub">Sender &rarr; Campaign &rarr; Prospects &amp; templates &rarr; Finish. Nothing is written to the Sheet until you finish the last step.</div>
 
 <div class="steps" id="stepsBar">
   <div class="step-dot" id="dot0"></div>
@@ -227,60 +206,15 @@
 </div><!-- /guidedSteps -->
 
 <script>
-  function toggleWizardMode() {
-    var mode = document.querySelector('input[name="wizardMode"]:checked').value;
-    document.getElementById('guidedSteps').classList.toggle('hidden', mode !== 'guided');
-    document.getElementById('stepsBar').classList.toggle('hidden', mode !== 'guided');
-    document.getElementById('bulkPanel').classList.toggle('hidden', mode !== 'bulk');
-  }
-
-  function openBulkTemplate() {
-    google.script.run.withSuccessHandler(function (result) { window.open(result.url, '_blank'); }).wizardGetBulkImportTemplate();
-  }
-
-  function runBulkImport() {
-    document.getElementById('bulkImportBtn').disabled = true;
-    document.getElementById('bulkStatus').innerText = 'Importing...';
-    document.getElementById('bulkResults').innerHTML = '';
-    google.script.run
-      .withSuccessHandler(function (r) {
-        document.getElementById('bulkImportBtn').disabled = false;
-        var hasErrors = r.errors && r.errors.length > 0;
-        document.getElementById('bulkStatus').className = hasErrors ? 'warn' : 'success';
-        document.getElementById('bulkStatus').innerText =
-          r.sendersCreated.length + ' sender(s), ' + r.campaignsCreated.length + ' campaign(s), ' +
-          r.prospectsCreated.length + ' prospect(s) imported' +
-          (r.skipped.length ? ', ' + r.skipped.length + ' row(s) already imported (skipped)' : '') +
-          (hasErrors ? ', ' + r.errors.length + ' error(s)' : '') + '.';
-
-        var html = '';
-        if (r.sendersCreated.length) {
-          html += '<label>New sender config (send to whoever configures the relay)</label>';
-          r.sendersCreated.forEach(function (s) {
-            html += '<div class="config-box">' + s.configSnippet + '</div>';
-          });
-        }
-        if (hasErrors) {
-          html += '<label>Errors</label><ul class="prospect-list">' +
-            r.errors.map(function (e) { return '<li>' + e + '</li>'; }).join('') + '</ul>';
-        }
-        document.getElementById('bulkResults').innerHTML = html;
-      })
-      .withFailureHandler(function (err) {
-        document.getElementById('bulkImportBtn').disabled = false;
-        document.getElementById('bulkStatus').className = 'error';
-        document.getElementById('bulkStatus').innerText = 'Error: ' + err.message;
-      })
-      .wizardBulkImport();
-  }
   var state = {
     senderId: null,
     campaignId: null,
+    campaignDraft: null, // new-campaign fields, held until Finish -- nothing is written to the Sheet before that
     campaignName: '',
     campaignIsExisting: false,
     campaignStatus: '',
     senderLabel: '',
-    prospects: [] // {email, stagesCreated}
+    prospects: [] // {firstName,lastName,company,email,custom1,custom2,sequence} -- held client-side until Finish
   };
 
   var DOTS = ['dot0', 'dot1', 'dot2', 'dot3'];
@@ -426,34 +360,25 @@
       return;
     }
 
+    // "new" mode: nothing is written to the Sheet here -- the campaign is
+    // only actually created in Step 4 (Finish), together with its
+    // prospects, in one atomic call. This avoids an empty, abandoned
+    // campaign landing in the Sheet if the wizard isn't finished.
     state.campaignIsExisting = false;
+    state.campaignId = null;
     var name = document.getElementById('campaignName').value.trim();
     if (!name) { setStatus('status1', 'error', 'Campaign name is required.'); return; }
 
-    var data = {
+    state.campaignDraft = {
       name: name,
       senderId: state.senderId,
       dailyLimit: document.getElementById('campaignDailyLimit').value,
       sendWindowStart: document.getElementById('sendWindowStart').value.trim(),
       sendWindowEnd: document.getElementById('sendWindowEnd').value.trim()
     };
-
-    document.getElementById('btn1').disabled = true;
-    setStatus('status1', '', 'Creating campaign...');
-
-    google.script.run
-      .withSuccessHandler(function (result) {
-        state.campaignId = result.campaignId;
-        state.campaignName = name;
-        setStatus('status1', 'success', 'Campaign created (id ' + result.campaignId + ').');
-        document.getElementById('btn1').disabled = false;
-        goToStep(2);
-      })
-      .withFailureHandler(function (err) {
-        setStatus('status1', 'error', 'Error: ' + err.message);
-        document.getElementById('btn1').disabled = false;
-      })
-      .wizardAddCampaign(data);
+    state.campaignName = name;
+    setStatus('status1', 'success', 'Campaign details captured -- it will actually be created when you finish in Step 4.');
+    goToStep(2);
   }
 
   // ---------- STEP 2: PROSPECTS + TEMPLATES ----------
@@ -587,51 +512,23 @@
     });
   }
 
-  // ---- CSV import (sequential, one prospect per call) ----
-  var csvImportQueue = [], csvImportIndex = 0, csvImportResults = { success: 0, failed: [] };
-
+  // ---- CSV import: held client-side only, same as the one-at-a-time
+  // form -- nothing is written to the Sheet until Finish in Step 4.
   function startCsvImport() {
-    csvImportQueue = csvParsedRows.filter(function (r) { return r.errors.length === 0; });
-    if (!csvImportQueue.length) return;
-    csvImportIndex = 0;
-    csvImportResults = { success: 0, failed: [] };
-    document.getElementById('csvImportBtn').disabled = true;
-    document.getElementById('csvFileInput').disabled = true;
-    importNextCsvRow();
-  }
-
-  function importNextCsvRow() {
-    if (csvImportIndex >= csvImportQueue.length) {
-      setStatus('csvStatus', csvImportResults.failed.length ? 'warn' : 'success',
-        'Imported ' + csvImportResults.success + ' of ' + csvImportQueue.length + ' prospect(s).' +
-        (csvImportResults.failed.length ? ' Failed: ' + csvImportResults.failed.join('; ') : ''));
-      document.getElementById('csvFileInput').disabled = false;
-      if (state.prospects.length > 0) {
-        document.getElementById('btn2continue').disabled = false;
-        document.getElementById('btn2continue').innerText = 'Continue';
-      }
-      return;
-    }
-    var row = csvImportQueue[csvImportIndex];
-    setStatus('csvStatus', '', 'Importing ' + (csvImportIndex + 1) + ' of ' + csvImportQueue.length + '...');
-    google.script.run
-      .withSuccessHandler(function (result) {
-        csvImportResults.success++;
-        state.prospects.push({ email: row.email, stagesCreated: result.stagesCreated });
-        renderProspectList();
-        csvImportIndex++;
-        importNextCsvRow();
-      })
-      .withFailureHandler(function (err) {
-        csvImportResults.failed.push(row.email + ': ' + err.message);
-        csvImportIndex++;
-        importNextCsvRow();
-      })
-      .wizardAddProspectWithTemplates({
-        campaignId: state.campaignId, firstName: row.firstName, lastName: row.lastName, company: row.company,
-        email: row.email, custom1: row.custom1, custom2: row.custom2, sequence: row.sequence,
-        sequencePosition: state.prospects.length
+    var valid = csvParsedRows.filter(function (r) { return r.errors.length === 0; });
+    if (!valid.length) return;
+    valid.forEach(function (row) {
+      state.prospects.push({
+        firstName: row.firstName, lastName: row.lastName, company: row.company,
+        email: row.email, custom1: row.custom1, custom2: row.custom2, sequence: row.sequence
       });
+    });
+    renderProspectList();
+    setStatus('csvStatus', 'success', 'Added ' + valid.length + ' prospect(s) to this campaign\'s list (not saved yet -- happens all at once when you finish in Step 4).');
+    document.getElementById('csvImportBtn').disabled = true;
+    document.getElementById('csvFileInput').value = '';
+    document.getElementById('btn2continue').disabled = false;
+    document.getElementById('btn2continue').innerText = 'Continue';
   }
 
   var stageCount = 0;
@@ -680,100 +577,100 @@
       });
     });
 
+    // Held client-side only -- nothing is written to the Sheet until
+    // Finish in Step 4 creates the campaign and every prospect together.
     var data = {
-      campaignId: state.campaignId,
       firstName: document.getElementById('prFirstName').value.trim(),
       lastName: document.getElementById('prLastName').value.trim(),
       company: document.getElementById('prCompany').value.trim(),
       email: email,
       custom1: document.getElementById('prCustom1').value.trim(),
       custom2: document.getElementById('prCustom2').value.trim(),
-      sequence: sequence,
-      sequencePosition: state.prospects.length
+      sequence: sequence
     };
 
-    document.getElementById('addProspectBtn').disabled = true;
-    setStatus('status2', '', 'Adding...');
-
-    google.script.run
-      .withSuccessHandler(function (result) {
-        state.prospects.push({ email: email, stagesCreated: result.stagesCreated });
-        renderProspectList();
-        setStatus('status2', 'success', 'Added ' + email + ' with ' + result.stagesCreated + ' email(s).');
-        document.getElementById('addProspectBtn').disabled = false;
-        document.getElementById('btn2continue').disabled = false;
-        document.getElementById('btn2continue').innerText = 'Continue';
-        ['prFirstName', 'prLastName', 'prCompany', 'prEmail', 'prCustom1', 'prCustom2'].forEach(function (id) {
-          document.getElementById(id).value = '';
-        });
-        resetStages();
-      })
-      .withFailureHandler(function (err) {
-        setStatus('status2', 'error', 'Error: ' + err.message);
-        document.getElementById('addProspectBtn').disabled = false;
-      })
-      .wizardAddProspectWithTemplates(data);
+    state.prospects.push(data);
+    renderProspectList();
+    setStatus('status2', 'success', 'Added ' + email + ' with ' + sequence.length + ' email(s) to this campaign\'s list (not saved yet).');
+    document.getElementById('btn2continue').disabled = false;
+    document.getElementById('btn2continue').innerText = 'Continue';
+    ['prFirstName', 'prLastName', 'prCompany', 'prEmail', 'prCustom1', 'prCustom2'].forEach(function (id) {
+      document.getElementById(id).value = '';
+    });
+    resetStages();
   }
 
   function renderProspectList() {
-    document.getElementById('prospectListLabel').innerText = 'Prospects added so far (' + state.prospects.length + ')';
+    document.getElementById('prospectListLabel').innerText = 'Prospects in this campaign\'s list, not saved yet (' + state.prospects.length + ')';
     document.getElementById('prospectList').innerHTML = state.prospects.map(function (p) {
-      return '<li>' + p.email + ' &mdash; ' + p.stagesCreated + ' email(s)</li>';
+      return '<li>' + p.email + ' &mdash; ' + p.sequence.length + ' email(s)</li>';
     }).join('');
   }
 
-  // ---------- STEP 3: REVIEW + START ----------
+  // ---------- STEP 3: REVIEW + FINISH ----------
+  // Nothing has been written to the Sheet yet at this point -- clicking
+  // the button below is the single atomic moment the campaign (if new)
+  // and every prospect above actually get created.
   function renderReview() {
     document.getElementById('reviewBox').innerHTML =
       '<div class="row"><div><label>Campaign</label>' + state.campaignName + '</div>' +
       '<div><label>Sender</label>' + state.senderLabel + '</div></div>' +
-      '<label>Prospects added this session (' + state.prospects.length + ')</label>' +
+      '<label>Prospects ready to create (' + state.prospects.length + ')</label>' +
       '<ul class="prospect-list">' + state.prospects.map(function (p) {
-        return '<li>' + p.email + ' &mdash; ' + p.stagesCreated + ' email(s)</li>';
+        return '<li>' + p.email + ' &mdash; ' + p.sequence.length + ' email(s)</li>';
       }).join('') + '</ul>';
 
     var activateRow = document.getElementById('activateRow');
     var startBtn = document.getElementById('startBtn');
+    startBtn.disabled = false;
     if (state.campaignIsExisting && state.campaignStatus === 'Active') {
       activateRow.classList.add('hidden');
-      startBtn.innerText = 'Done';
-      document.getElementById('reviewBox').innerHTML += '<div class="hint">This campaign is already Active -- the new prospects above will be picked up on the scheduler\'s next run, nothing else to do.</div>';
+      startBtn.innerText = 'Create Prospects';
+      document.getElementById('reviewBox').innerHTML += '<div class="hint">This campaign is already Active -- the prospects above will be created and picked up on the scheduler\'s next run.</div>';
     } else if (state.campaignIsExisting) {
       activateRow.classList.remove('hidden');
       startBtn.innerText = 'Finish';
       document.getElementById('reviewBox').innerHTML += '<div class="hint">This campaign is currently Paused. Leave the box unchecked to add these prospects without changing that -- they\'ll wait until you activate the campaign (from here or the dashboard).</div>';
     } else {
       activateRow.classList.add('hidden');
-      startBtn.innerText = 'Start Campaign';
-      document.getElementById('reviewBox').innerHTML += '<div class="hint">Starting marks the campaign Active. It won\'t send instantly -- the normal scheduler trigger picks it up on its next run.</div>';
+      startBtn.innerText = 'Create Campaign';
+      document.getElementById('reviewBox').innerHTML += '<div class="hint">Nothing is in the Sheet yet. Clicking below creates the campaign and all prospects above in one shot, then marks it Active -- it won\'t send instantly, the normal scheduler trigger picks it up on its next run.</div>';
     }
   }
 
   function startCampaign() {
-    var needsActivate = !state.campaignIsExisting || document.getElementById('activateCheckbox').checked;
-    if (!needsActivate) {
-      setStatus('status3', 'success', 'Done. Prospects added; campaign left Paused as-is.');
-      document.getElementById('startBtn').innerText = 'Done';
-      document.getElementById('startBtn').disabled = true;
-      return;
+    var payload = {
+      prospects: state.prospects.map(function (p) {
+        return { firstName: p.firstName, lastName: p.lastName, company: p.company, email: p.email, custom1: p.custom1, custom2: p.custom2, sequence: p.sequence };
+      })
+    };
+
+    if (state.campaignIsExisting) {
+      payload.campaignId = state.campaignId;
+      payload.activate = state.campaignStatus !== 'Active' && document.getElementById('activateCheckbox').checked;
+    } else {
+      payload.campaignDraft = state.campaignDraft;
+      payload.activate = true;
     }
 
     document.getElementById('startBtn').disabled = true;
-    setStatus('status3', '', 'Starting...');
+    setStatus('status3', '', 'Creating campaign and prospects...');
+
     google.script.run
       .withSuccessHandler(function (result) {
-        if (result.warning) {
-          setStatus('status3', 'warn', 'Campaign started, but: ' + result.warning);
-        } else {
-          setStatus('status3', 'success', 'Campaign started. It\'ll begin sending on the scheduler\'s next run.');
-        }
-        document.getElementById('startBtn').innerText = 'Started';
+        state.campaignId = result.campaignId;
+        var msg = 'Completed -- campaign "' + result.campaignName + '" now has ' + result.prospectsCreated.length + ' prospect(s) created.';
+        if (result.errors && result.errors.length) msg += ' ' + result.errors.length + ' row(s) failed: ' + result.errors.join('; ');
+        if (result.activated) msg += result.activateWarning ? (' Started, but: ' + result.activateWarning) : ' Campaign is Active and will begin sending on the scheduler\'s next run.';
+        else if (state.campaignIsExisting && state.campaignStatus !== 'Active') msg += ' Campaign left Paused as-is.';
+        setStatus('status3', (result.errors && result.errors.length) ? 'warn' : 'success', msg);
+        document.getElementById('startBtn').innerText = 'Done';
       })
       .withFailureHandler(function (err) {
         setStatus('status3', 'error', 'Error: ' + err.message);
         document.getElementById('startBtn').disabled = false;
       })
-      .wizardStartCampaign(state.campaignId);
+      .wizardFinalizeCampaign(payload);
   }
 
   // ---------- init ----------

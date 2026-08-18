@@ -160,6 +160,56 @@ function wizardStartCampaign(campaignId) {
   };
 }
 
+/**
+ * Single atomic "finish the wizard" call. Creates the Campaign row (only
+ * if this is a brand new campaign -- an existing one picked in Step 2 is
+ * left untouched) and every prospect/template row for it in one shot, so
+ * nothing partial (an empty campaign with 0 prospects) ever lands in the
+ * Sheet if someone abandons the wizard midway through adding prospects.
+ * `data`: { campaignId (existing campaigns) OR campaignDraft {name,
+ * senderId, dailyLimit, sendWindowStart, sendWindowEnd} (new campaigns),
+ * prospects: [{firstName,lastName,company,email,custom1,custom2,sequence}],
+ * activate: bool }.
+ */
+function wizardFinalizeCampaign(data) {
+  var campaignId = data.campaignId;
+  if (!campaignId) {
+    if (!data.campaignDraft) throw new Error('No campaign to create and no existing campaign selected');
+    campaignId = wizardAddCampaign(data.campaignDraft).campaignId;
+  }
+
+  var prospectsCreated = [];
+  var errors = [];
+  (data.prospects || []).forEach(function (p, i) {
+    try {
+      var result = wizardAddProspectWithTemplates({
+        campaignId: campaignId, firstName: p.firstName, lastName: p.lastName, company: p.company,
+        email: p.email, custom1: p.custom1, custom2: p.custom2, sequence: p.sequence, sequencePosition: i
+      });
+      prospectsCreated.push({ email: p.email, stagesCreated: result.stagesCreated });
+    } catch (err) {
+      errors.push((p.email || 'row ' + (i + 1)) + ': ' + err.message);
+    }
+  });
+
+  var activated = false, activateWarning = '';
+  if (data.activate) {
+    var startResult = wizardStartCampaign(campaignId);
+    activated = true;
+    activateWarning = startResult.warning || '';
+  }
+
+  var campaign = getCampaignById(campaignId);
+  return {
+    campaignId: campaignId,
+    campaignName: campaign ? campaign.Name : '',
+    prospectsCreated: prospectsCreated,
+    errors: errors,
+    activated: activated,
+    activateWarning: activateWarning
+  };
+}
+
 /* ------------------------------------------------------------------ *
  * Bulk import: one row per prospect in a "Bulk Import" sheet tab, each
  * row carrying its own sender + full template sequence. Rows sharing the
