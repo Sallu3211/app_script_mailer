@@ -116,16 +116,31 @@
 <!-- STEP 1: CAMPAIGN -->
 <div class="panel hidden" id="step1">
   <h2>Step 2 of 4 &mdash; Campaign</h2>
-  <label>Campaign Name</label>
-  <input id="campaignName" placeholder="e.g. Q3 Outreach" />
-  <div class="row">
-    <div><label>Daily Limit</label><input id="campaignDailyLimit" type="number" value="30" /></div>
+
+  <div class="radio-row">
+    <label><input type="radio" name="campaignMode" value="new" checked onchange="toggleCampaignMode()"> Create a new campaign</label>
+    <label><input type="radio" name="campaignMode" value="existing" onchange="toggleCampaignMode()"> Add more prospects to an existing campaign</label>
   </div>
-  <div class="row">
-    <div><label>Send Window Start</label><input id="sendWindowStart" value="09:00" /></div>
-    <div><label>Send Window End</label><input id="sendWindowEnd" value="17:00" /></div>
+
+  <div id="existingCampaignBlock" class="hidden">
+    <label>Campaign</label>
+    <select id="existingCampaignId"></select>
+    <div class="hint">Only campaigns for the sender you picked in Step 1 are listed. Prospects you add next go straight into this campaign -- nothing about it is recreated or changed.</div>
   </div>
-  <div class="hint">24h "HH:mm". Use 00:00 / 23:59 to allow sending any time of day.</div>
+
+  <div id="newCampaignBlock">
+    <label>Campaign Name</label>
+    <input id="campaignName" placeholder="e.g. Q3 Outreach" />
+    <div class="row">
+      <div><label>Daily Limit</label><input id="campaignDailyLimit" type="number" value="30" /></div>
+    </div>
+    <div class="row">
+      <div><label>Send Window Start</label><input id="sendWindowStart" value="09:00" /></div>
+      <div><label>Send Window End</label><input id="sendWindowEnd" value="17:00" /></div>
+    </div>
+    <div class="hint">24h "HH:mm". Use 00:00 / 23:59 to allow sending any time of day.</div>
+  </div>
+
   <div id="status1"></div>
   <div class="actions">
     <button class="secondary" onclick="goToStep(0)">Back</button>
@@ -136,6 +151,7 @@
 <!-- STEP 2: PROSPECTS + TEMPLATES -->
 <div class="panel hidden" id="step2">
   <h2>Step 3 of 4 &mdash; Prospects &amp; templates</h2>
+  <div class="hint" id="step2Hint" style="margin-bottom:12px;">Sender and campaign are locked in from the steps above. Fill in one prospect's details and content below, click "Add Prospect", then repeat for the next one -- you never re-enter the sender or campaign.</div>
 
   <div class="row">
     <div><label>First Name</label><input id="prFirstName" /></div>
@@ -160,6 +176,7 @@
     <button onclick="submitProspect()" id="addProspectBtn">Add Prospect</button>
   </div>
 
+  <label id="prospectListLabel">Prospects added so far (0)</label>
   <ul class="prospect-list" id="prospectList"></ul>
 
   <div class="actions">
@@ -170,8 +187,11 @@
 
 <!-- STEP 3: REVIEW + START -->
 <div class="panel hidden" id="step3">
-  <h2>Step 4 of 4 &mdash; Review &amp; start</h2>
+  <h2>Step 4 of 4 &mdash; Review &amp; finish</h2>
   <div id="reviewBox"></div>
+  <div id="activateRow" class="radio-row hidden">
+    <label><input type="checkbox" id="activateCheckbox"> Also activate this campaign now (it's currently Paused)</label>
+  </div>
   <div id="status3"></div>
   <div class="actions">
     <button class="secondary" onclick="goToStep(2)">Back</button>
@@ -231,6 +251,8 @@
     senderId: null,
     campaignId: null,
     campaignName: '',
+    campaignIsExisting: false,
+    campaignStatus: '',
     senderLabel: '',
     prospects: [] // {email, stagesCreated}
   };
@@ -342,7 +364,43 @@
   }
 
   // ---------- STEP 1: CAMPAIGN ----------
+  function toggleCampaignMode() {
+    var mode = document.querySelector('input[name="campaignMode"]:checked').value;
+    document.getElementById('existingCampaignBlock').classList.toggle('hidden', mode !== 'existing');
+    document.getElementById('newCampaignBlock').classList.toggle('hidden', mode !== 'new');
+    if (mode === 'existing') loadCampaignsForSender();
+  }
+
+  function loadCampaignsForSender() {
+    var select = document.getElementById('existingCampaignId');
+    select.innerHTML = '<option value="">Loading...</option>';
+    google.script.run.withSuccessHandler(function (campaigns) {
+      if (!campaigns || campaigns.length === 0) {
+        select.innerHTML = '<option value="">No campaigns yet for this sender -- switch to "Create a new campaign"</option>';
+        return;
+      }
+      select.innerHTML = campaigns.map(function (c) {
+        return '<option value="' + c.campaignId + '" data-name="' + c.name + '" data-status="' + c.status + '">' + c.name + ' (' + c.status + ')</option>';
+      }).join('');
+    }).wizardGetCampaignsForSender(state.senderId);
+  }
+
   function submitStep1() {
+    var mode = document.querySelector('input[name="campaignMode"]:checked').value;
+
+    if (mode === 'existing') {
+      var select = document.getElementById('existingCampaignId');
+      if (!select.value) { setStatus('status1', 'error', 'Pick a campaign.'); return; }
+      var opt = select.options[select.selectedIndex];
+      state.campaignId = select.value;
+      state.campaignName = opt.dataset.name;
+      state.campaignIsExisting = true;
+      state.campaignStatus = opt.dataset.status;
+      goToStep(2);
+      return;
+    }
+
+    state.campaignIsExisting = false;
     var name = document.getElementById('campaignName').value.trim();
     if (!name) { setStatus('status1', 'error', 'Campaign name is required.'); return; }
 
@@ -427,7 +485,8 @@
       email: email,
       custom1: document.getElementById('prCustom1').value.trim(),
       custom2: document.getElementById('prCustom2').value.trim(),
-      sequence: sequence
+      sequence: sequence,
+      sequencePosition: state.prospects.length
     };
 
     document.getElementById('addProspectBtn').disabled = true;
@@ -454,6 +513,7 @@
   }
 
   function renderProspectList() {
+    document.getElementById('prospectListLabel').innerText = 'Prospects added so far (' + state.prospects.length + ')';
     document.getElementById('prospectList').innerHTML = state.prospects.map(function (p) {
       return '<li>' + p.email + ' &mdash; ' + p.stagesCreated + ' email(s)</li>';
     }).join('');
@@ -464,14 +524,37 @@
     document.getElementById('reviewBox').innerHTML =
       '<div class="row"><div><label>Campaign</label>' + state.campaignName + '</div>' +
       '<div><label>Sender</label>' + state.senderLabel + '</div></div>' +
-      '<label>Prospects (' + state.prospects.length + ')</label>' +
+      '<label>Prospects added this session (' + state.prospects.length + ')</label>' +
       '<ul class="prospect-list">' + state.prospects.map(function (p) {
         return '<li>' + p.email + ' &mdash; ' + p.stagesCreated + ' email(s)</li>';
-      }).join('') + '</ul>' +
-      '<div class="hint">Starting marks the campaign Active. It won\'t send instantly -- the normal scheduler trigger picks it up on its next run.</div>';
+      }).join('') + '</ul>';
+
+    var activateRow = document.getElementById('activateRow');
+    var startBtn = document.getElementById('startBtn');
+    if (state.campaignIsExisting && state.campaignStatus === 'Active') {
+      activateRow.classList.add('hidden');
+      startBtn.innerText = 'Done';
+      document.getElementById('reviewBox').innerHTML += '<div class="hint">This campaign is already Active -- the new prospects above will be picked up on the scheduler\'s next run, nothing else to do.</div>';
+    } else if (state.campaignIsExisting) {
+      activateRow.classList.remove('hidden');
+      startBtn.innerText = 'Finish';
+      document.getElementById('reviewBox').innerHTML += '<div class="hint">This campaign is currently Paused. Leave the box unchecked to add these prospects without changing that -- they\'ll wait until you activate the campaign (from here or the dashboard).</div>';
+    } else {
+      activateRow.classList.add('hidden');
+      startBtn.innerText = 'Start Campaign';
+      document.getElementById('reviewBox').innerHTML += '<div class="hint">Starting marks the campaign Active. It won\'t send instantly -- the normal scheduler trigger picks it up on its next run.</div>';
+    }
   }
 
   function startCampaign() {
+    var needsActivate = !state.campaignIsExisting || document.getElementById('activateCheckbox').checked;
+    if (!needsActivate) {
+      setStatus('status3', 'success', 'Done. Prospects added; campaign left Paused as-is.');
+      document.getElementById('startBtn').innerText = 'Done';
+      document.getElementById('startBtn').disabled = true;
+      return;
+    }
+
     document.getElementById('startBtn').disabled = true;
     setStatus('status3', '', 'Starting...');
     google.script.run

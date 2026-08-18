@@ -144,6 +144,24 @@ function addJitterMinutes_(date, maxMinutes) {
   return new Date(date.getTime() + jitterMs);
 }
 
+/**
+ * Initial-send scheduling for prospect N (0-indexed) within a batch added
+ * together -- see BATCH_STAGGER_* in Config.gs. Position 0 sends
+ * immediately (Status Pending, no NextSendDate needed); every later
+ * position gets a Scheduled status with a NextSendDate staggered forward
+ * so a batch of 20 doesn't fire in the same scheduler run.
+ */
+function computeInitialSchedule_(position) {
+  var pos = Number(position) || 0;
+  if (pos <= 0) {
+    return { status: PROSPECT_STATUS.PENDING, nextSendDate: '' };
+  }
+  var offsetMinutes = pos * BATCH_STAGGER_AVG_MINUTES +
+    (Math.random() * 2 - 1) * BATCH_STAGGER_JITTER_MINUTES;
+  var nextSendDate = new Date(Date.now() + Math.max(1, offsetMinutes) * 60 * 1000);
+  return { status: PROSPECT_STATUS.SCHEDULED, nextSendDate: nextSendDate };
+}
+
 function todayDateString(tz) {
   return Utilities.formatDate(new Date(), tz || getSetting('TIMEZONE'), 'yyyy-MM-dd');
 }
@@ -154,6 +172,31 @@ function isNewDay(lastResetDateValue, tz) {
     ? Utilities.formatDate(lastResetDateValue, tz || getSetting('TIMEZONE'), 'yyyy-MM-dd')
     : String(lastResetDateValue);
   return last !== todayDateString(tz);
+}
+
+/**
+ * Deletes every row in `sheetName` whose `idColumn` matches one of
+ * `idValues` (a single value or array). Deletes bottom-up so earlier row
+ * numbers found in the same pass stay valid. Used by deleteCampaign() to
+ * cascade-remove a campaign's Prospects/Templates rows.
+ */
+function deleteRowsByKey(sheetName, idColumn, idValues) {
+  var ids = Array.isArray(idValues) ? idValues : [idValues];
+  if (ids.length === 0) return 0;
+  var sheet = getSpreadsheet().getSheetByName(sheetName);
+  if (!sheet || sheet.getLastRow() < 2) return 0;
+  var data = sheet.getDataRange().getValues();
+  var headers = data[0];
+  var idIdx = headers.indexOf(idColumn);
+  if (idIdx === -1) return 0;
+
+  var rowsToDelete = [];
+  for (var r = 1; r < data.length; r++) {
+    if (ids.indexOf(data[r][idIdx]) !== -1) rowsToDelete.push(r + 1);
+  }
+  rowsToDelete.sort(function (a, b) { return b - a; });
+  rowsToDelete.forEach(function (rowNum) { sheet.deleteRow(rowNum); });
+  return rowsToDelete.length;
 }
 
 function generateId(prefix) {

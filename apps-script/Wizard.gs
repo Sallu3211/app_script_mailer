@@ -59,6 +59,17 @@ function wizardAddSender(data) {
   return { senderId: senderId, configSnippet: configSnippet };
 }
 
+/**
+ * Campaigns belonging to one sender, for the wizard's "use an existing
+ * campaign" mode -- lets you add another batch of prospects to a campaign
+ * you already created without recreating it.
+ */
+function wizardGetCampaignsForSender(senderId) {
+  return sheetToObjects(SHEET_NAMES.CAMPAIGNS)
+    .filter(function (c) { return c.SenderID === senderId; })
+    .map(function (c) { return { campaignId: c.CampaignID, name: c.Name, status: c.Status }; });
+}
+
 function wizardAddCampaign(data) {
   if (!data.name) throw new Error('Campaign name is required');
   if (!data.senderId) throw new Error('Sender is required');
@@ -94,6 +105,7 @@ function wizardAddProspectWithTemplates(data) {
   var campaign = getCampaignById(data.campaignId);
   if (!campaign) throw new Error('Campaign not found: ' + data.campaignId);
 
+  var schedule = computeInitialSchedule_(data.sequencePosition);
   var prospectId = generateId('PRO');
   appendRow(SHEET_NAMES.PROSPECTS, {
     ProspectID: prospectId,
@@ -103,10 +115,10 @@ function wizardAddProspectWithTemplates(data) {
     Email: normalizeEmail(data.email),
     CampaignID: campaign.CampaignID,
     SenderID: campaign.SenderID,
-    Status: PROSPECT_STATUS.PENDING,
+    Status: schedule.status,
     CurrentStage: 0,
     LastSentDate: '',
-    NextSendDate: '',
+    NextSendDate: schedule.nextSendDate,
     LastMessageId: '',
     LastError: '',
     Custom1: data.custom1 || '',

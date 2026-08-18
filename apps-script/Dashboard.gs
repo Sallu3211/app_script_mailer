@@ -59,6 +59,8 @@ function getSpreadsheetUrl() {
  * Most recent replies from actual known prospects, newest first. Used by
  * the dashboard's "Recent Replies" panel so you can see who replied and
  * what they said without opening the Sheet or any individual Titan mailbox.
+ * Optional campaignId narrows this to one campaign (dashboard filter
+ * dropdown); omit/'' for all campaigns.
  *
  * Unmatched inbound mail (not from any tracked prospect -- inbox noise,
  * mailbox-warmup pings, wrong-address typos, etc.) is intentionally
@@ -66,9 +68,9 @@ function getSpreadsheetUrl() {
  * for audit purposes -- this view is specifically "who from my campaigns
  * replied," not a general inbox viewer.
  */
-function getRecentReplies(limit) {
+function getRecentReplies(limit, campaignId) {
   var replies = sheetToObjects(SHEET_NAMES.REPLIES).filter(function (r) {
-    return r.Matched === 'Yes';
+    return r.Matched === 'Yes' && (!campaignId || r.CampaignID === campaignId);
   });
   var campaigns = sheetToObjects(SHEET_NAMES.CAMPAIGNS);
   var campaignNameById = {};
@@ -84,10 +86,86 @@ function getRecentReplies(limit) {
       senderEmail: r.SenderEmail || '',
       prospectName: (r.ProspectName || '').trim(),
       prospectEmail: r.ProspectEmail || '',
+      campaignId: r.CampaignID || '',
       campaignName: campaignNameById[r.CampaignID] || '',
       subject: r.Subject || '',
       bodyPreview: r.BodyPreview || '',
       matched: r.Matched === 'Yes'
     };
   });
+}
+
+/**
+ * Campaign table for the dashboard -- backs the Pause/Play control and the
+ * click-to-drill-down-into-prospects row, so day-to-day campaign control
+ * never needs the Sheet.
+ */
+function getCampaignsList() {
+  var campaigns = sheetToObjects(SHEET_NAMES.CAMPAIGNS);
+  var senders = sheetToObjects(SHEET_NAMES.SENDERS);
+  var prospects = sheetToObjects(SHEET_NAMES.PROSPECTS);
+
+  var senderById = {};
+  senders.forEach(function (s) { senderById[s.SenderID] = s; });
+
+  var countByCampaign = {};
+  prospects.forEach(function (p) {
+    countByCampaign[p.CampaignID] = (countByCampaign[p.CampaignID] || 0) + 1;
+  });
+
+  return campaigns.map(function (c) {
+    var sender = senderById[c.SenderID];
+    return {
+      campaignId: c.CampaignID,
+      name: c.Name,
+      senderName: sender ? sender.Name : '(unknown sender)',
+      senderEmail: sender ? sender.Email : '',
+      status: c.Status,
+      sentToday: isNewDay(c.LastResetDate) ? 0 : (parseInt(c.SentToday, 10) || 0),
+      dailyLimit: parseInt(c.DailyLimit, 10) || 0,
+      prospectCount: countByCampaign[c.CampaignID] || 0
+    };
+  });
+}
+
+function prospectSummary_(p) {
+  return {
+    prospectId: p.ProspectID,
+    name: ((p.FirstName || '') + ' ' + (p.LastName || '')).trim(),
+    email: p.Email,
+    company: p.Company || '',
+    status: p.Status,
+    stage: p.CurrentStage,
+    nextSendDate: p.NextSendDate ? new Date(p.NextSendDate).toISOString() : '',
+    lastError: p.LastError || ''
+  };
+}
+
+/**
+ * Prospect drill-down for one campaign -- click a campaign row on the
+ * dashboard to see who's in it (status, stage, next send) without opening
+ * the Sheet.
+ */
+function getProspectsForCampaign(campaignId) {
+  return sheetToObjects(SHEET_NAMES.PROSPECTS)
+    .filter(function (p) { return p.CampaignID === campaignId; })
+    .map(prospectSummary_);
+}
+
+/**
+ * Prospect drill-down by status -- backs clicking a stat tile (e.g.
+ * "Replies" or "Completed") to see the actual list instead of just a
+ * count. 'Pending' means the scheduler-active statuses (Pending +
+ * Scheduled), matching the "Pending / Scheduled" tile; 'StoppedFollowups'
+ * matches the "Paused / Bounced" tile. Optional campaignId narrows further.
+ */
+function getProspectsByStatus(statusGroup, campaignId) {
+  return sheetToObjects(SHEET_NAMES.PROSPECTS)
+    .filter(function (p) {
+      if (campaignId && p.CampaignID !== campaignId) return false;
+      if (statusGroup === 'Pending') return PROSPECT_ACTIVE_STATUSES.indexOf(p.Status) !== -1;
+      if (statusGroup === 'StoppedFollowups') return p.Status === PROSPECT_STATUS.PAUSED || p.Status === PROSPECT_STATUS.BOUNCED;
+      return p.Status === statusGroup;
+    })
+    .map(prospectSummary_);
 }

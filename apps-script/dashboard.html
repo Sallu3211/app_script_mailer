@@ -7,17 +7,37 @@
   .banner.live { background: #e3f7e8; color: #1a6b32; border: 1px solid #9fd8ae; }
   .banner.paused { background: #fde3e3; color: #a02020; border: 1px solid #f0a0a0; }
   .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 24px; }
-  .tile { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .tile { background: white; border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); cursor: pointer; transition: box-shadow 0.15s; }
+  .tile:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.14); }
+  .tile.static { cursor: default; }
+  .tile.static:hover { box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
   .tile .value { font-size: 26px; font-weight: 700; }
   .tile .label { font-size: 12px; color: #666; margin-top: 4px; }
-  .actions { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+  .actions { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; align-items: center; }
   button { background: #2d5bff; color: white; border: none; border-radius: 6px; padding: 10px 16px; font-size: 13px; cursor: pointer; }
   button:disabled { opacity: 0.6; cursor: default; }
   button.secondary { background: white; color: #2d5bff; border: 1px solid #2d5bff; }
+  button.small { padding: 5px 12px; font-size: 12px; }
+  button.pause { background: white; color: #a02020; border: 1px solid #f0a0a0; }
+  button.play { background: #1a6b32; }
   .nav { display: flex; gap: 8px; flex-wrap: wrap; }
   .nav a { text-decoration: none; background: white; border: 1px solid #ddd; padding: 8px 14px; border-radius: 6px; font-size: 13px; color: #333; }
   #status { font-size: 13px; color: #666; margin-top: 8px; }
-  h2 { font-size: 15px; margin: 28px 0 10px; }
+  h2 { font-size: 15px; margin: 28px 0 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+  select { padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 12px; font-family: inherit; background: white; }
+  table { width: 100%; border-collapse: collapse; background: white; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  th, td { text-align: left; padding: 10px 12px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+  th { color: #666; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; background: #fafafa; }
+  tr:last-child td { border-bottom: none; }
+  tr.clickable { cursor: pointer; }
+  tr.clickable:hover { background: #f9fafc; }
+  .badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 600; }
+  .badge.Active { background: #e3f7e8; color: #1a6b32; }
+  .badge.Paused { background: #fde3e3; color: #a02020; }
+  .badge.Pending, .badge.Scheduled { background: #eef1ff; color: #2d5bff; }
+  .badge.Replied { background: #e3f7e8; color: #1a6b32; }
+  .badge.Bounced { background: #fde3e3; color: #a02020; }
+  .badge.Completed { background: #f2f2f2; color: #555; }
   .replies { display: flex; flex-direction: column; gap: 8px; }
   .reply-card { background: white; border-radius: 10px; padding: 14px 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
   .reply-card.unmatched { opacity: 0.65; }
@@ -28,11 +48,22 @@
   .reply-body { font-size: 13px; color: #222; white-space: pre-wrap; max-height: 4.5em; overflow: hidden; }
   .reply-tag { display: inline-block; font-size: 11px; padding: 2px 7px; border-radius: 10px; background: #eef1ff; color: #2d5bff; margin-left: 6px; }
   .reply-tag.no-match { background: #f2f2f2; color: #888; }
-  .empty { color: #888; font-size: 13px; }
+  .empty { color: #888; font-size: 13px; padding: 14px; background: white; border-radius: 10px; }
+  .overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 10; }
+  .overlay.open { display: block; }
+  .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(480px, 100vw); background: #f6f7f9; box-shadow: -2px 0 12px rgba(0,0,0,0.15); z-index: 11; padding: 20px; overflow-y: auto; transform: translateX(100%); transition: transform 0.2s; box-sizing: border-box; }
+  .drawer.open { transform: translateX(0); }
+  .drawer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+  .drawer-head h3 { font-size: 16px; margin: 0; }
+  .drawer-close { background: none; border: none; color: #666; font-size: 20px; padding: 0 6px; cursor: pointer; }
+  .prospect-card { background: white; border-radius: 8px; padding: 10px 12px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.06); }
+  .prospect-card .p-top { display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .prospect-card .p-meta { font-size: 12px; color: #777; }
+  .prospect-card .p-error { font-size: 12px; color: #a02020; margin-top: 4px; }
 </style>
 
 <h1>Cold Email Dashboard</h1>
-<div class="sub">Auto-refreshes every 30s. Full data editing happens in the Sheet.</div>
+<div class="sub">Auto-refreshes every 30s. Pause/play, campaigns, and replies all live here now &mdash; the Sheet is only needed for raw data edits.</div>
 
 <div id="banner"></div>
 
@@ -47,21 +78,41 @@
 
 <div class="nav" id="nav"></div>
 
-<h2>Recent Replies</h2>
+<h2>Campaigns</h2>
+<table id="campaignsTable">
+  <thead><tr><th>Name</th><th>Sender</th><th>Status</th><th>Sent / Limit</th><th>Prospects</th><th></th></tr></thead>
+  <tbody id="campaignsBody"></tbody>
+</table>
+
+<h2>
+  <span>Recent Replies</span>
+  <select id="repliesFilter" onchange="refreshReplies()"><option value="">All campaigns</option></select>
+</h2>
 <div class="replies" id="replies"></div>
+
+<div class="overlay" id="overlay" onclick="closeDrawer()"></div>
+<div class="drawer" id="drawer">
+  <div class="drawer-head">
+    <h3 id="drawerTitle">Prospects</h3>
+    <button class="drawer-close" onclick="closeDrawer()">&times;</button>
+  </div>
+  <div id="drawerBody"></div>
+</div>
 
 <script>
   var TILE_DEFS = [
-    ['activeCampaigns', 'Active Campaigns'],
-    ['totalCampaigns', 'Total Campaigns'],
-    ['totalSenders', 'Total Senders'],
-    ['totalProspects', 'Total Prospects'],
-    ['emailsSentToday', 'Sent Today'],
-    ['pendingEmails', 'Pending / Scheduled'],
-    ['replies', 'Replies'],
-    ['stoppedFollowups', 'Paused / Bounced'],
-    ['completed', 'Completed']
+    ['activeCampaigns', 'Active Campaigns', null],
+    ['totalCampaigns', 'Total Campaigns', null],
+    ['totalSenders', 'Total Senders', null],
+    ['totalProspects', 'Total Prospects', null],
+    ['emailsSentToday', 'Sent Today', null],
+    ['pendingEmails', 'Pending / Scheduled', 'Pending'],
+    ['replies', 'Replies', 'Replied'],
+    ['stoppedFollowups', 'Paused / Bounced', 'StoppedFollowups'],
+    ['completed', 'Completed', 'Completed']
   ];
+
+  var campaignNameById = {};
 
   function render(stats) {
     var bannerEl = document.getElementById('banner');
@@ -77,8 +128,9 @@
     tilesEl.innerHTML = '';
     TILE_DEFS.forEach(function (def) {
       var tile = document.createElement('div');
-      tile.className = 'tile';
+      tile.className = 'tile' + (def[2] ? '' : ' static');
       tile.innerHTML = '<div class="value">' + stats[def[0]] + '</div><div class="label">' + def[1] + '</div>';
+      if (def[2]) tile.onclick = function () { openStatusDrawer(def[2], def[1]); };
       tilesEl.appendChild(tile);
     });
   }
@@ -89,6 +141,59 @@
     });
   }
 
+  // ---------- CAMPAIGNS TABLE ----------
+  function renderCampaigns(campaigns) {
+    campaignNameById = {};
+    campaigns.forEach(function (c) { campaignNameById[c.campaignId] = c.name; });
+
+    var filterSelect = document.getElementById('repliesFilter');
+    var currentFilter = filterSelect.value;
+    filterSelect.innerHTML = '<option value="">All campaigns</option>' + campaigns.map(function (c) {
+      return '<option value="' + c.campaignId + '">' + escapeHtml(c.name) + '</option>';
+    }).join('');
+    filterSelect.value = currentFilter;
+
+    var body = document.getElementById('campaignsBody');
+    if (!campaigns.length) {
+      body.innerHTML = '<tr><td colspan="6" class="empty">No campaigns yet. Use "+ Add Campaign" above.</td></tr>';
+      return;
+    }
+    body.innerHTML = campaigns.map(function (c) {
+      var toggleLabel = c.status === 'Active' ? 'Pause' : 'Play';
+      var toggleClass = c.status === 'Active' ? 'pause' : 'play';
+      var nextStatus = c.status === 'Active' ? 'Paused' : 'Active';
+      return '<tr class="clickable" onclick="openCampaignDrawer(\'' + c.campaignId + '\', \'' + escapeHtml(c.name).replace(/'/g, "\\'") + '\')">' +
+        '<td>' + escapeHtml(c.name) + '</td>' +
+        '<td>' + escapeHtml(c.senderName) + '</td>' +
+        '<td><span class="badge ' + c.status + '">' + c.status + '</span></td>' +
+        '<td>' + c.sentToday + ' / ' + c.dailyLimit + '</td>' +
+        '<td>' + c.prospectCount + '</td>' +
+        '<td><button class="small ' + toggleClass + '" onclick="event.stopPropagation(); toggleCampaign(\'' + c.campaignId + '\', \'' + nextStatus + '\')">' + toggleLabel + '</button> ' +
+        '<button class="small secondary" onclick="event.stopPropagation(); deleteCampaign(\'' + c.campaignId + '\', \'' + escapeHtml(c.name).replace(/'/g, "\\'") + '\')">Delete</button></td>' +
+        '</tr>';
+    }).join('');
+  }
+
+  function toggleCampaign(campaignId, nextStatus) {
+    google.script.run
+      .withSuccessHandler(function () { refresh(); })
+      .withFailureHandler(function (err) { alert('Error: ' + err.message); })
+      .setCampaignStatus(campaignId, nextStatus);
+  }
+
+  function deleteCampaign(campaignId, campaignName) {
+    if (!confirm('Delete campaign "' + campaignName + '"? This also deletes all its prospects and their email content. This cannot be undone.')) return;
+    google.script.run
+      .withSuccessHandler(function () { refresh(); })
+      .withFailureHandler(function (err) { alert('Error: ' + err.message); })
+      .deleteCampaign(campaignId);
+  }
+
+  function refreshCampaigns() {
+    google.script.run.withSuccessHandler(renderCampaigns).getCampaignsList();
+  }
+
+  // ---------- REPLIES ----------
   function renderReplies(replies) {
     var el = document.getElementById('replies');
     if (!replies || replies.length === 0) {
@@ -110,9 +215,56 @@
     }).join('');
   }
 
+  function refreshReplies() {
+    var campaignId = document.getElementById('repliesFilter').value;
+    google.script.run.withSuccessHandler(renderReplies).getRecentReplies(25, campaignId || null);
+  }
+
+  // ---------- DRILL-DOWN DRAWER ----------
+  function renderProspects(prospects) {
+    var body = document.getElementById('drawerBody');
+    if (!prospects || prospects.length === 0) {
+      body.innerHTML = '<div class="empty">No prospects here.</div>';
+      return;
+    }
+    body.innerHTML = prospects.map(function (p) {
+      var next = p.nextSendDate ? new Date(p.nextSendDate).toLocaleString() : '';
+      return '<div class="prospect-card">' +
+        '<div class="p-top"><span>' + escapeHtml(p.name || p.email) + '</span><span class="badge ' + p.status + '">' + p.status + '</span></div>' +
+        '<div class="p-meta">' + escapeHtml(p.email) + (p.company ? ' &middot; ' + escapeHtml(p.company) : '') + '</div>' +
+        '<div class="p-meta">Stage ' + p.stage + (next ? ' &middot; next: ' + escapeHtml(next) : '') + '</div>' +
+        (p.lastError ? '<div class="p-error">' + escapeHtml(p.lastError) + '</div>' : '') +
+        '</div>';
+    }).join('');
+  }
+
+  function openDrawer(title) {
+    document.getElementById('drawerTitle').innerText = title;
+    document.getElementById('drawerBody').innerHTML = '<div class="empty">Loading...</div>';
+    document.getElementById('overlay').classList.add('open');
+    document.getElementById('drawer').classList.add('open');
+  }
+
+  function closeDrawer() {
+    document.getElementById('overlay').classList.remove('open');
+    document.getElementById('drawer').classList.remove('open');
+  }
+
+  function openCampaignDrawer(campaignId, campaignName) {
+    openDrawer(campaignName);
+    google.script.run.withSuccessHandler(renderProspects).getProspectsForCampaign(campaignId);
+  }
+
+  function openStatusDrawer(statusGroup, label) {
+    openDrawer(label);
+    google.script.run.withSuccessHandler(renderProspects).getProspectsByStatus(statusGroup, null);
+  }
+
+  // ---------- GLOBAL ACTIONS ----------
   function refresh() {
     google.script.run.withSuccessHandler(render).getDashboardStats();
-    google.script.run.withSuccessHandler(renderReplies).getRecentReplies(25);
+    refreshCampaigns();
+    refreshReplies();
   }
 
   function runNow() {

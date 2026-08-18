@@ -65,7 +65,7 @@ function runScheduler() {
       continue;
     }
 
-    var due = getDueProspects(campaign.CampaignID, remaining);
+    var due = getDueProspects(campaign.CampaignID, remaining, MAX_INITIAL_SENDS_PER_CAMPAIGN_PER_RUN);
     if (due.length === 0) {
       logSystemEvent('Campaign "' + campaign.Name + '": no due prospects right now', 'Info');
       continue;

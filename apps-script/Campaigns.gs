@@ -44,6 +44,51 @@ function isCampaignWithinSendWindow(campaign) {
   return isWithinSendWindow(campaign.SendWindowStart, campaign.SendWindowEnd);
 }
 
+var CAMPAIGN_TOGGLABLE_STATUSES_ = ['Active', 'Paused'];
+
+/**
+ * Flips a campaign between Active/Paused from the dashboard UI, so Pause/
+ * Play never requires opening the Sheet. Only Active/Paused are valid
+ * targets here -- there's no third state a dashboard button should ever
+ * set.
+ */
+function setCampaignStatus(campaignId, status) {
+  if (CAMPAIGN_TOGGLABLE_STATUSES_.indexOf(status) === -1) {
+    throw new Error('Invalid status: ' + status);
+  }
+  var campaign = getCampaignById(campaignId);
+  if (!campaign) throw new Error('Campaign not found: ' + campaignId);
+
+  updateRowByKey(SHEET_NAMES.CAMPAIGNS, 'CampaignID', campaignId, { Status: status });
+  logSystemEvent('Campaign ' + campaignId + ' (' + campaign.Name + ') set to ' + status + ' from dashboard', 'Info');
+  return { campaignId: campaignId, status: status };
+}
+
+/**
+ * Deletes a campaign and cascades to its Prospects and their Templates
+ * rows -- a campaign made through the dashboard/wizard by mistake (or a
+ * finished test campaign) shouldn't need manual cleanup across three
+ * sheets. Logs/Replies history is left intact for audit even though it now
+ * references a deleted CampaignID, same as how unmatched replies are kept.
+ */
+function deleteCampaign(campaignId) {
+  var campaign = getCampaignById(campaignId);
+  if (!campaign) throw new Error('Campaign not found: ' + campaignId);
+
+  var prospectIds = sheetToObjects(SHEET_NAMES.PROSPECTS)
+    .filter(function (p) { return p.CampaignID === campaignId; })
+    .map(function (p) { return p.ProspectID; });
+
+  if (prospectIds.length > 0) {
+    deleteRowsByKey(SHEET_NAMES.TEMPLATES, 'ProspectID', prospectIds);
+    deleteRowsByKey(SHEET_NAMES.PROSPECTS, 'ProspectID', prospectIds);
+  }
+  deleteRowsByKey(SHEET_NAMES.CAMPAIGNS, 'CampaignID', campaignId);
+
+  logSystemEvent('Campaign ' + campaignId + ' (' + campaign.Name + ') deleted from dashboard, along with ' + prospectIds.length + ' prospect(s)', 'Info');
+  return { deleted: true, prospectsDeleted: prospectIds.length };
+}
+
 /**
  * All campaigns (not just Active ones -- you may want to add a prospect to
  * a Paused campaign before flipping it live), with the sender's name

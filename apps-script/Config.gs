@@ -44,6 +44,27 @@ var MAX_FOLLOWUPS = 10;
 // exact same second every cycle, which reads as robotic/automated.
 var SEND_TIME_JITTER_MINUTES = 7;
 
+// When several prospects are added to the same campaign in one batch (the
+// wizard's prospect loop, or a bulk/CSV import), their FIRST send is spread
+// out instead of all going out in the same scheduler run -- a human sending
+// 20 initial emails doesn't hit send on all of them in the same second.
+// Prospect N in a batch (0-indexed) gets an initial NextSendDate around
+// N * BATCH_STAGGER_AVG_MINUTES from the moment it's added, wobbled by
+// +/- BATCH_STAGGER_JITTER_MINUTES so consecutive prospects don't land on a
+// perfectly even interval either. Prospect 0 always sends immediately
+// (Status Pending) -- staggering only applies from the 2nd prospect in a
+// batch onward.
+var BATCH_STAGGER_AVG_MINUTES = 9;
+var BATCH_STAGGER_JITTER_MINUTES = 4;
+
+// Backstop against bursts regardless of how NextSendDate ended up staggered
+// (e.g. a campaign paused for days then resumed, or "Run Scheduler Now"
+// clicked repeatedly) -- caps how many brand-new (stage 0) sends a single
+// campaign can fire in one scheduler run. Follow-ups (stage > 0) aren't
+// capped by this -- they're already spread out via each prospect's own
+// send history and shouldn't be made to wait behind a new-prospect queue.
+var MAX_INITIAL_SENDS_PER_CAMPAIGN_PER_RUN = 5;
+
 var DEFAULT_SETTINGS = [
   ['RELAY_BASE_URL', ''],
   ['RELAY_SHARED_SECRET', ''],

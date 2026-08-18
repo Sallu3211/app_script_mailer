@@ -7,8 +7,15 @@
  * capped at `limit`. Only Pending/Scheduled are ever eligible — Paused,
  * Replied, Bounced and Completed are permanent/manual stops the scheduler
  * must never override.
+ *
+ * `maxInitialSends`, if given, further caps how many stage-0 (brand new,
+ * never-sent) prospects can come back in one call -- a backstop against a
+ * burst of first-touch sends (e.g. many prospects all simultaneously
+ * overdue after a campaign sat Paused) reading as robotic. Follow-ups
+ * (stage > 0) are never capped by this -- see MAX_INITIAL_SENDS_PER_CAMPAIGN_PER_RUN
+ * in Config.gs.
  */
-function getDueProspects(campaignId, limit) {
+function getDueProspects(campaignId, limit, maxInitialSends) {
   var now = new Date();
   var all = sheetToObjects(SHEET_NAMES.PROSPECTS);
 
@@ -26,6 +33,17 @@ function getDueProspects(campaignId, limit) {
     var db = (b.Status === PROSPECT_STATUS.PENDING) ? 0 : new Date(b.NextSendDate).getTime();
     return da - db;
   });
+
+  if (typeof maxInitialSends === 'number') {
+    var initialCount = 0;
+    due = due.filter(function (p) {
+      if (Number(p.CurrentStage) === 0) {
+        initialCount++;
+        return initialCount <= maxInitialSends;
+      }
+      return true;
+    });
+  }
 
   return due.slice(0, limit);
 }
@@ -77,7 +95,9 @@ function computeNextSendDate(prospectId, currentStage) {
  * (0 = Initial, 1..followupCount = Follow-up 1..N), pre-linked to the new
  * ProspectID so nothing needs to be manually copied/typed across rows.
  * `data`: {firstName, lastName, company, email, campaignId, custom1,
- * custom2, followupCount}. Returns {prospectId, stagesCreated}.
+ * custom2, followupCount, sequencePosition}. `sequencePosition` (0-indexed)
+ * staggers this prospect's first send if it's part of a batch -- see
+ * computeInitialSchedule_ in Utils.gs. Returns {prospectId, stagesCreated}.
  */
 function addProspectWithFollowups(data) {
   if (!data.email) throw new Error('Email is required');
@@ -86,6 +106,7 @@ function addProspectWithFollowups(data) {
   var campaign = getCampaignById(data.campaignId);
   if (!campaign) throw new Error('Campaign not found: ' + data.campaignId);
 
+  var schedule = computeInitialSchedule_(data.sequencePosition);
   var prospectId = generateId('PRO');
   appendRow(SHEET_NAMES.PROSPECTS, {
     ProspectID: prospectId,
@@ -95,10 +116,10 @@ function addProspectWithFollowups(data) {
     Email: normalizeEmail(data.email),
     CampaignID: campaign.CampaignID,
     SenderID: campaign.SenderID,
-    Status: PROSPECT_STATUS.PENDING,
+    Status: schedule.status,
     CurrentStage: 0,
     LastSentDate: '',
-    NextSendDate: '',
+    NextSendDate: schedule.nextSendDate,
     LastMessageId: '',
     LastError: '',
     Custom1: data.custom1 || '',
