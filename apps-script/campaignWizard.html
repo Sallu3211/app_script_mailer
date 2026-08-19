@@ -80,6 +80,11 @@
     <input id="senderPassword" type="password" />
     <div class="hint">This password is never written to the Sheet. Submitting creates the sender as <b>Pending</b> (won't send yet) and gives you a copy-paste block below to hand off so the relay's real config gets updated -- that step happens outside the Sheet.</div>
 
+    <div class="actions" style="margin-top:8px;">
+      <button type="button" class="secondary small" onclick="testSenderConnection()" id="testConnBtn">Test Connection</button>
+    </div>
+    <div id="testConnStatus" style="font-size:12px; margin-top:6px;"></div>
+
     <div id="senderConfigOutput" class="hidden">
       <label>Send this to whoever configures the relay</label>
       <div class="config-box" id="senderConfigBox"></div>
@@ -269,6 +274,45 @@
   }
 
   var newSenderSubmitted = false;
+
+  function testSenderConnection() {
+    var email = document.getElementById('senderEmail').value.trim();
+    var password = document.getElementById('senderPassword').value;
+    var statusEl = 'testConnStatus';
+    if (!email) { setStatus(statusEl, 'error', 'Enter the mailbox email first.'); return; }
+    if (!password) { setStatus(statusEl, 'error', 'Enter the mailbox password first.'); return; }
+
+    var data = {
+      email: email,
+      smtpHost: document.getElementById('smtpHost').value.trim(),
+      smtpPort: document.getElementById('smtpPort').value,
+      imapHost: document.getElementById('imapHost').value.trim(),
+      imapPort: document.getElementById('imapPort').value,
+      password: password
+    };
+
+    var btn = document.getElementById('testConnBtn');
+    btn.disabled = true;
+    setStatus(statusEl, '', 'Testing SMTP + IMAP login...');
+
+    google.script.run
+      .withSuccessHandler(function (result) {
+        btn.disabled = false;
+        if (result.success) {
+          setStatus(statusEl, 'success', 'Connection OK -- SMTP and IMAP login both succeeded with these credentials.');
+        } else {
+          var parts = [];
+          if (!result.smtp.ok) parts.push('SMTP failed: ' + result.smtp.error);
+          if (!result.imap.ok) parts.push('IMAP failed: ' + result.imap.error);
+          setStatus(statusEl, 'error', parts.join(' | '));
+        }
+      })
+      .withFailureHandler(function (err) {
+        btn.disabled = false;
+        setStatus(statusEl, 'error', 'Error: ' + err.message);
+      })
+      .wizardVerifySender(data);
+  }
 
   function submitStep0() {
     var mode = document.querySelector('input[name="senderMode"]:checked').value;

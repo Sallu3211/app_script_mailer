@@ -10,6 +10,7 @@ const { loadConfig } = require('./config');
 const { requireRelaySecret } = require('./middleware/auth');
 const { buildSendRoute } = require('./routes/send');
 const { buildHealthRoute } = require('./routes/health');
+const { buildVerifyRoute } = require('./routes/verify');
 const poller = require('./imap/poller');
 const logger = require('./logger');
 
@@ -26,6 +27,7 @@ app.use(express.json({ limit: '1mb' }));
 
 app.get('/health', buildHealthRoute());
 app.post('/send', requireRelaySecret(config), buildSendRoute(config));
+app.post('/verify-sender', requireRelaySecret(config), buildVerifyRoute());
 
 app.use((err, req, res, next) => {
   logger.error('Unhandled error:', err.message);

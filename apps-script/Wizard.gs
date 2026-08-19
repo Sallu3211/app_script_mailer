@@ -60,6 +60,56 @@ function wizardAddSender(data) {
 }
 
 /**
+ * Tests SMTP+IMAP credentials against the relay's /verify-sender endpoint
+ * before they're handed off to be wired into SENDERS_CONFIG for real --
+ * catches a typo'd password/host immediately instead of only finding out
+ * once someone manually updates the relay and a real send fails.
+ * Credentials are never written to the Sheet either way (same as
+ * wizardAddSender) -- this only ever passes them through to the relay.
+ */
+function wizardVerifySender(data) {
+  if (!data.email) throw new Error('Email is required');
+  if (!data.password) throw new Error('Password is required to test the connection');
+
+  var baseUrl = getSetting('RELAY_BASE_URL');
+  var secret = getSetting('RELAY_SHARED_SECRET');
+  if (!baseUrl) throw new Error('RELAY_BASE_URL is not configured in Settings');
+
+  var payload = {
+    email: normalizeEmail(data.email),
+    smtpHost: data.smtpHost || 'smtp.titan.email',
+    smtpPort: parseInt(data.smtpPort, 10) || 465,
+    smtpSecure: true,
+    smtpUser: normalizeEmail(data.email),
+    smtpPass: data.password,
+    imapHost: data.imapHost || 'imap.titan.email',
+    imapPort: parseInt(data.imapPort, 10) || 993,
+    imapUser: normalizeEmail(data.email),
+    imapPass: data.password
+  };
+
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'X-Relay-Secret': secret },
+    payload: JSON.stringify(payload),
+    muteHttpExceptions: true
+  };
+
+  var response = UrlFetchApp.fetch(baseUrl.replace(/\/$/, '') + '/verify-sender', options);
+  var body;
+  try {
+    body = JSON.parse(response.getContentText());
+  } catch (e) {
+    throw new Error('Relay returned a non-JSON response (HTTP ' + response.getResponseCode() + ')');
+  }
+  if (response.getResponseCode() >= 400 && !body.smtp) {
+    throw new Error(body.error || ('Relay error (HTTP ' + response.getResponseCode() + ')'));
+  }
+  return body;
+}
+
+/**
  * Campaigns belonging to one sender, for the wizard's "use an existing
  * campaign" mode -- lets you add another batch of prospects to a campaign
  * you already created without recreating it.
