@@ -25,6 +25,14 @@ function wizardAddSender(data) {
   if (!data.email) throw new Error('Email is required');
   if (!data.name) throw new Error('Name is required');
 
+  var existing = getSenderByEmail(data.email);
+  if (existing) {
+    throw new Error(
+      'A sender with this email already exists (' + existing.SenderID + ', status ' + existing.Status +
+      ') -- use "Use an existing sender" instead of adding it again.'
+    );
+  }
+
   var senderId = generateId('SND');
   appendRow(SHEET_NAMES.SENDERS, {
     SenderID: senderId,
