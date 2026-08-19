@@ -56,10 +56,15 @@ Titan mailbox(es) --------------------
 - **Prospects** — one row per prospect: name/email/company/custom fields,
   `Status` (`Pending` / `Scheduled` / `Paused` / `Replied` / `Bounced` /
   `Completed`), `CurrentStage`, `NextSendDate`.
-- **Templates** — one row per campaign per stage (`0` = Initial, `1`-`10` =
-  Follow-up 1-10), with `{{first_name}}` / `{{last_name}}` / `{{company}}` /
-  `{{email}}` / `{{custom1}}` / `{{custom2}}` merge tags and
-  `DelayDaysFromPrevious`.
+- **Templates** — one row per **prospect** per stage (`0` = Initial, `1`-`10`
+  = Follow-up 1-10), *not* shared per campaign — every prospect owns their
+  own fully independent Initial + follow-up content, even within the same
+  campaign. `{{first_name}}` / `{{last_name}}` / `{{company}}` / `{{email}}`
+  / `{{custom1}}` / `{{custom2}}` merge tags and `DelayDaysFromPrevious`
+  still work on top of that if you want to reuse dynamic fields, but nothing
+  requires it. (Earlier versions of this project keyed Templates by
+  `CampaignID` instead; `Setup.gs`'s `migrateTemplatesToProspectScoped_`
+  auto-converts an old-schema Templates tab if one is ever encountered.)
 - **Logs** — every send attempt and every scheduler skip reason, newest last.
 - **Replies** — every inbound message the relay's IMAP poller sees, whether
   or not it matched a tracked prospect (unmatched ones stay here for
@@ -158,6 +163,49 @@ check the `Logs` tab and your inbox → reply to it and wait one poll cycle
 → confirm the prospect flips to `Status = Replied` in the Sheet and shows
 up in the dashboard's Recent Replies panel. Only then flip `TEST_MODE` off
 and set real Senders/Campaigns to `Active`.
+
+## Dashboard & wizard (day-to-day UI, doesn't require opening the Sheet)
+
+Open the dashboard from the Sheet menu (**Cold Email → Open Dashboard**) or
+the public `/exec` URL directly.
+
+- **Stat tiles are clickable** — each one (Active Campaigns, Total Senders,
+  Sent Today, Pending/Scheduled, Replies, Paused/Bounced, Completed) opens a
+  slide-out drawer listing the underlying rows, so you rarely need the Sheet
+  just to answer "who's in this state."
+- **Campaigns table**: click a row to drill into its prospects; Pause/Play
+  toggles `Status` without opening the Sheet; **Delete** cascades to that
+  campaign's Prospects and Templates rows (Logs/Replies history is kept for
+  audit even though it then references a deleted CampaignID) — confirms
+  before deleting, and cannot be undone.
+- **"+ Add Campaign" → the guided wizard** (`?page=wizard`, also reachable
+  standalone): Sender → Campaign → Prospects & templates → Review/Finish.
+  Nothing is written to the Sheet until the final "Finish" step, which
+  creates the campaign (if new) and every prospect + template row in one
+  atomic call — an abandoned wizard session leaves nothing partial behind.
+  - **New sender step** has a **Test Connection** button that checks SMTP +
+    IMAP login against the entered credentials via the relay's
+    `POST /verify-sender` *before* you commit to adding the sender — catches
+    a typo'd password/host immediately. Credentials are never written to the
+    Sheet either way; a new sender is added as `Pending` with a copy-paste
+    config block for whoever updates the relay's `SENDERS_CONFIG`.
+  - **Adding a sender with an email that already exists throws an error**
+    pointing at the existing SenderID — pick "Use an existing sender"
+    instead. (Fixed 2026-08-19 after two duplicate `Pending` rows for the
+    same mailbox accumulated in the live Sheet from repeated testing.)
+  - **Prospects step** supports one-at-a-time entry *or* a CSV upload: download
+    a template (First/Last/Company/Email/Custom1/Custom2 + Initial +
+    up to 10 numbered follow-ups with their own delay), fill it in offline,
+    upload it — parsed and validated client-side before anything is sent to
+    the server.
+- **Bulk Import** (menu or wizard link): a separate "Bulk Import" Sheet tab,
+  one row per prospect, each carrying its *own* sender credentials +
+  campaign + full template sequence — use this instead of the wizard when
+  prospects span multiple senders/campaigns in one shot. Dedupes rows
+  sharing the same sender+campaign (creates that sender/campaign once, not
+  once per row) and is idempotent (`ImportStatus = Imported` rows are
+  skipped on re-run, so fixing one bad row and re-running doesn't duplicate
+  everyone else).
 
 ## Manual controls, day-to-day
 
