@@ -16,7 +16,7 @@ var SHEET_NAMES = {
 
 var COLUMNS = {
   SETTINGS: ['Key', 'Value'],
-  SENDERS: ['SenderID', 'Name', 'Email', 'DailyLimit', 'SentToday', 'LastResetDate', 'Status'],
+  SENDERS: ['SenderID', 'Name', 'Email', 'DailyLimit', 'SentToday', 'LastResetDate', 'Status', 'NextAllowedSendAt'],
   CAMPAIGNS: ['CampaignID', 'Name', 'SenderID', 'DailyLimit', 'SentToday', 'LastResetDate', 'SendWindowStart', 'SendWindowEnd', 'Status'],
   PROSPECTS: ['ProspectID', 'FirstName', 'LastName', 'Company', 'Email', 'CampaignID', 'SenderID', 'Status', 'CurrentStage', 'LastSentDate', 'NextSendDate', 'LastMessageId', 'LastError', 'Custom1', 'Custom2'],
   TEMPLATES: ['TemplateID', 'ProspectID', 'Stage', 'DelayDaysFromPrevious', 'Subject', 'Body'],
@@ -64,6 +64,19 @@ var BATCH_STAGGER_JITTER_MINUTES = 4;
 // capped by this -- they're already spread out via each prospect's own
 // send history and shouldn't be made to wait behind a new-prospect queue.
 var MAX_INITIAL_SENDS_PER_CAMPAIGN_PER_RUN = 5;
+
+// Per-SENDER spacing gate (not per-campaign, not per-prospect): after any
+// successful send, that mailbox is randomly cooled down for somewhere in
+// this range before it's allowed to send again, regardless of which
+// campaign or which prospect/stage the next due send belongs to. This is
+// what actually stops the burst-of-5-in-20-seconds pattern -- capping how
+// many fire per scheduler run isn't enough on its own, since a backlog of
+// overdue prospects (e.g. after an outage) still lets every allowed one
+// through back-to-back with no gap between them. Two campaigns sharing one
+// sender are gated together, since the whole point is "this mailbox doesn't
+// look like a bot" -- it doesn't matter which campaign the next email is for.
+var SENDER_MIN_GAP_MINUTES = 5;
+var SENDER_MAX_GAP_MINUTES = 20;
 
 var DEFAULT_SETTINGS = [
   ['RELAY_BASE_URL', ''],

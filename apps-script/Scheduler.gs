@@ -15,6 +15,7 @@ function runScheduler() {
   // Sender/Campaign row appended since the last heal (appendRow doesn't
   // inherit the Plain Text formatting applied to earlier rows).
   fixLastResetDateColumnFormat_();
+  ensureSenderGapColumn_();
 
   var maxPerRun = parseInt(getSetting('MAX_EMAILS_PER_RUN'), 10) || 50;
   var sentThisRun = 0;
@@ -39,6 +40,10 @@ function runScheduler() {
     }
     if (sender.Status !== 'Active') {
       logSystemEvent('Campaign "' + campaign.Name + '" skipped: sender "' + sender.Name + '" is not Active', 'Warn');
+      continue;
+    }
+    if (sender.NextAllowedSendAt && new Date(sender.NextAllowedSendAt).getTime() > Date.now()) {
+      logSystemEvent('Campaign "' + campaign.Name + '" skipped: sender "' + sender.Name + '" is spacing sends, next allowed ' + new Date(sender.NextAllowedSendAt).toISOString(), 'Info');
       continue;
     }
 
@@ -74,7 +79,18 @@ function runScheduler() {
     anyProcessed = true;
     for (var i = 0; i < due.length; i++) {
       try {
-        sentThisRun += processProspect_(due[i], campaign, sender) ? 1 : 0;
+        var sent = processProspect_(due[i], campaign, sender);
+        if (sent) {
+          sentThisRun += 1;
+          // One send opens this sender's spacing gate for a random 5-20min
+          // window -- stop here for this run so the rest of `due` (and any
+          // other Active campaign sharing this sender later in the `campaigns`
+          // loop) waits for a future run instead of firing back-to-back.
+          var nextAllowed = randomFutureTime_(SENDER_MIN_GAP_MINUTES, SENDER_MAX_GAP_MINUTES);
+          updateRowByKey(SHEET_NAMES.SENDERS, 'SenderID', sender.SenderID, { NextAllowedSendAt: nextAllowed });
+          sender.NextAllowedSendAt = nextAllowed;
+          break;
+        }
       } catch (err) {
         logSystemEvent('Unhandled error processing prospect ' + due[i].ProspectID + ': ' + err.message, 'Error');
       }

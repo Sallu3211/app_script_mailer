@@ -339,6 +339,20 @@ function fixOneLastResetDateColumn_(sheetName, columns) {
   });
 }
 
+/**
+ * Self-heals the Senders tab onto a live Sheet created before the
+ * NextAllowedSendAt column existed -- same pattern as
+ * fixLastResetDateColumnFormat_. Idempotent: no-ops once the column exists.
+ */
+function ensureSenderGapColumn_() {
+  var sheet = getSpreadsheet().getSheetByName(SHEET_NAMES.SENDERS);
+  if (!sheet || sheet.getLastColumn() === 0) return;
+  var lastCol = sheet.getLastColumn();
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
+  if (headers.indexOf('NextAllowedSendAt') !== -1) return;
+  sheet.getRange(1, lastCol + 1).setValue('NextAllowedSendAt');
+}
+
 function installTriggers() {
   var triggers = ScriptApp.getProjectTriggers();
   triggers.forEach(function (t) {

@@ -145,6 +145,16 @@ function addJitterMinutes_(date, maxMinutes) {
 }
 
 /**
+ * A random Date between minMinutes and maxMinutes from now -- used for the
+ * per-sender send-spacing gate (SENDER_MIN_GAP_MINUTES/MAX in Config.gs),
+ * unlike addJitterMinutes_ above which wobbles an already-computed time.
+ */
+function randomFutureTime_(minMinutes, maxMinutes) {
+  var minutes = minMinutes + Math.random() * (maxMinutes - minMinutes);
+  return new Date(Date.now() + minutes * 60 * 1000);
+}
+
+/**
  * Initial-send scheduling for prospect N (0-indexed) within a batch added
  * together -- see BATCH_STAGGER_* in Config.gs. Position 0 sends
  * immediately (Status Pending, no NextSendDate needed); every later
