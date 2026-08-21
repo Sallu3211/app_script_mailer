@@ -6,6 +6,9 @@
  */
 
 const nodemailer = require('nodemailer');
+const MailComposer = require('nodemailer/lib/mail-composer');
+const { ImapFlow } = require('imapflow');
+const logger = require('../logger');
 
 const transportCache = new Map();
 
@@ -47,9 +50,44 @@ async function sendMail(senderConfig, { to, subject, body, inReplyTo, references
 
   try {
     const info = await transport.sendMail(mailOptions);
+    // Best-effort only: the send already succeeded and must not be retried
+    // or reported as failed just because saving a Sent-folder copy didn't
+    // work, so this is deliberately swallowed rather than re-thrown.
+    saveSentCopy(senderConfig, mailOptions, info.messageId).catch((err) => {
+      logger.warn(`Failed to save Sent-folder copy for ${senderConfig.email}: ${err.message}`);
+    });
     return { messageId: info.messageId };
   } catch (err) {
     throw classifySmtpError(err);
+  }
+}
+
+/**
+ * Raw SMTP submission (what sendMail above does) never appears in the
+ * mailbox's own Sent folder -- that's a webmail-client behavior, not
+ * something the mail server does automatically for third-party SMTP
+ * clients. Appends a copy via IMAP so Titan's webmail shows sent mail,
+ * same as it would if it had been composed there.
+ */
+async function saveSentCopy(senderConfig, mailOptions, messageId) {
+  const composed = await new MailComposer({ ...mailOptions, messageId }).compile().build();
+
+  const client = new ImapFlow({
+    host: senderConfig.imapHost,
+    port: senderConfig.imapPort,
+    secure: true,
+    auth: { user: senderConfig.imapUser, pass: senderConfig.imapPass },
+    logger: false
+  });
+
+  await client.connect();
+  try {
+    const folders = await client.list();
+    const sentFolder = folders.find((f) => f.specialUse === '\\Sent') || folders.find((f) => f.name === 'Sent');
+    if (!sentFolder) throw new Error('No Sent folder found via IMAP LIST');
+    await client.append(sentFolder.path, composed, ['\\Seen']);
+  } finally {
+    await client.logout().catch(() => client.close());
   }
 }
 
