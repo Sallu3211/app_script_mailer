@@ -38,6 +38,18 @@ function loadConfig() {
         throw new Error(`SENDERS_CONFIG[${i}] is missing field "${field}"`);
       }
     });
+    // smtpSecure isn't in requiredSenderFields above because `false` (587/
+    // STARTTLS) is a legitimate value the undefined/null/'' check would
+    // reject -- but a missing 'smtpSecure' silently becomes `!!undefined ===
+    // false` in smtp/sender.js's getTransport, which on a port-465 mailbox
+    // (implicit TLS) hangs waiting for a plaintext greeting the server
+    // never sends. Caught this the hard way: nathan@byterisellc.online's
+    // entry was added without it and failed every real send with "Greeting
+    // never received" while /verify-sender (which hardcodes smtpSecure:true
+    // independently) reported success. Require it explicitly instead.
+    if (typeof s.smtpSecure !== 'boolean') {
+      throw new Error(`SENDERS_CONFIG[${i}] ("${s.email}") is missing boolean field "smtpSecure" (true for port 465, false for 587/STARTTLS)`);
+    }
   });
 
   const bySenderEmail = new Map();
