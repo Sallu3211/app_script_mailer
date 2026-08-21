@@ -170,10 +170,17 @@ function markReplied(fromEmail, senderEmail) {
   var terminal = [PROSPECT_STATUS.REPLIED, PROSPECT_STATUS.BOUNCED, PROSPECT_STATUS.COMPLETED];
   var all = sheetToObjects(SHEET_NAMES.PROSPECTS);
 
+  // A never-sent prospect (LastSentDate empty -- Pending, or Scheduled but its
+  // campaign never got to it, e.g. Paused) can't be who a real reply is to,
+  // even if the same address happens to exist as another untouched row under
+  // this sender (a duplicate prospect list across two campaigns, say). Without
+  // this, one real reply gets mis-attributed to every matching row, wrongly
+  // flipping an un-sent prospect to Replied and permanently blocking it.
   var match = all.filter(function (p) {
     return p.SenderID === sender.SenderID &&
       normalizeEmail(p.Email) === normFrom &&
-      terminal.indexOf(p.Status) === -1;
+      terminal.indexOf(p.Status) === -1 &&
+      !!p.LastSentDate;
   });
 
   match.forEach(function (p) {
