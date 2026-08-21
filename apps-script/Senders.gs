@@ -52,3 +52,24 @@ function senderRemainingCapacity(sender) {
   var sent = parseInt(sender.SentToday, 10) || 0;
   return Math.max(0, limit - sent);
 }
+
+var SENDER_TOGGLABLE_STATUSES_ = ['Active', 'Pending'];
+
+/**
+ * Flips a sender between Active/Pending from the dashboard, mirroring
+ * setCampaignStatus. Flipping to Active does NOT verify the relay has
+ * working credentials for this mailbox -- callers should confirm via
+ * wizardVerifySender or the Test Connection UI first, since the scheduler
+ * will silently start attempting sends the moment this is Active.
+ */
+function setSenderStatus(senderId, status) {
+  if (SENDER_TOGGLABLE_STATUSES_.indexOf(status) === -1) {
+    throw new Error('Invalid status: ' + status);
+  }
+  var sender = getSenderById(senderId);
+  if (!sender) throw new Error('Sender not found: ' + senderId);
+
+  updateRowByKey(SHEET_NAMES.SENDERS, 'SenderID', senderId, { Status: status });
+  logSystemEvent('Sender ' + senderId + ' (' + sender.Name + ') set to ' + status + ' from dashboard', 'Info');
+  return { senderId: senderId, status: status };
+}

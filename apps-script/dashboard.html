@@ -197,9 +197,16 @@
       var toggleLabel = c.status === 'Active' ? 'Pause' : 'Play';
       var toggleClass = c.status === 'Active' ? 'pause' : 'play';
       var nextStatus = c.status === 'Active' ? 'Paused' : 'Active';
+      var senderOk = c.senderStatus === 'Active';
+      var senderCellId = 'sender-cell-' + c.campaignId;
+      var senderCell = escapeHtml(c.senderName) +
+        (senderOk ? '' :
+          ' <span class="badge Paused" title="' + escapeHtml(c.senderStatus === 'Missing' ? 'No sender assigned' : 'Sender is ' + c.senderStatus + ', not Active') + '">' +
+          (c.senderStatus === 'Missing' ? 'no sender' : c.senderStatus.toLowerCase()) + '</span>' +
+          ' <button class="small secondary" onclick="event.stopPropagation(); openReconnect(\'' + c.campaignId + '\', \'' + senderCellId + '\')">Reconnect</button>');
       return '<tr class="clickable" onclick="openCampaignDrawer(\'' + c.campaignId + '\', \'' + escapeHtml(c.name).replace(/'/g, "\\'") + '\')">' +
         '<td>' + escapeHtml(c.name) + '</td>' +
-        '<td>' + escapeHtml(c.senderName) + '</td>' +
+        '<td id="' + senderCellId + '">' + senderCell + '</td>' +
         '<td><span class="badge ' + c.status + '">' + c.status + '</span></td>' +
         '<td>' + c.sentToday + ' / ' + c.dailyLimit + '</td>' +
         '<td>' + c.prospectCount + '</td>' +
@@ -207,6 +214,34 @@
         '<button class="small secondary" onclick="event.stopPropagation(); deleteCampaign(\'' + c.campaignId + '\', \'' + escapeHtml(c.name).replace(/'/g, "\\'") + '\')">Delete</button></td>' +
         '</tr>';
     }).join('');
+  }
+
+  // Reconnect flow: swap the sender cell for a <select> of other senders +
+  // Save/Cancel, populated from the senders list already loaded for the
+  // "Total Senders" drill-down. Avoids a modal for what's a rare fix-up action.
+  var lastSenders = [];
+
+  function openReconnect(campaignId, cellId) {
+    var cell = document.getElementById(cellId);
+    if (!lastSenders.length) {
+      alert('Senders list not loaded yet -- try again in a moment.');
+      return;
+    }
+    var options = lastSenders.map(function (s) {
+      return '<option value="' + s.senderId + '">' + escapeHtml(s.name) + ' (' + escapeHtml(s.email) + ', ' + s.status + ')</option>';
+    }).join('');
+    cell.innerHTML = '<select id="reconnectSelect-' + campaignId + '" onclick="event.stopPropagation()">' + options + '</select> ' +
+      '<button class="small play" onclick="event.stopPropagation(); confirmReconnect(\'' + campaignId + '\')">Save</button> ' +
+      '<button class="small secondary" onclick="event.stopPropagation(); refreshCampaigns()">Cancel</button>';
+  }
+
+  function confirmReconnect(campaignId) {
+    var select = document.getElementById('reconnectSelect-' + campaignId);
+    var newSenderId = select.value;
+    google.script.run
+      .withSuccessHandler(function () { refreshCampaigns(); })
+      .withFailureHandler(function (err) { alert('Error: ' + err.message); })
+      .reassignCampaignSender(campaignId, newSenderId);
   }
 
   function toggleCampaign(campaignId, nextStatus) {
@@ -280,12 +315,24 @@
       return;
     }
     body.innerHTML = senders.map(function (s) {
+      var toggleLabel = s.status === 'Active' ? 'Deactivate' : 'Activate';
+      var toggleClass = s.status === 'Active' ? 'pause' : 'play';
+      var nextStatus = s.status === 'Active' ? 'Pending' : 'Active';
       return '<div class="prospect-card">' +
         '<div class="p-top"><span>' + escapeHtml(s.name) + '</span><span class="badge ' + s.status + '">' + s.status + '</span></div>' +
         '<div class="p-meta">' + escapeHtml(s.email) + '</div>' +
         '<div class="p-meta">Sent today: ' + s.sentToday + ' / ' + s.dailyLimit + '</div>' +
+        '<div class="p-meta"><button class="small ' + toggleClass + '" onclick="toggleSender(\'' + s.senderId + '\', \'' + nextStatus + '\')">' + toggleLabel + '</button></div>' +
         '</div>';
     }).join('');
+  }
+
+  function toggleSender(senderId, nextStatus) {
+    if (nextStatus === 'Active' && !confirm('Activate this sender? Make sure its SMTP/IMAP credentials are already confirmed working on the relay first -- any campaign pointed at it will start sending on the next scheduler run.')) return;
+    google.script.run
+      .withSuccessHandler(function () { google.script.run.withSuccessHandler(renderSenders).getSendersList(); refresh(); })
+      .withFailureHandler(function (err) { alert('Error: ' + err.message); })
+      .setSenderStatus(senderId, nextStatus);
   }
 
   function renderSentLog(entries) {
@@ -331,6 +378,7 @@
     google.script.run.withSuccessHandler(render).getDashboardStats();
     refreshCampaigns();
     refreshReplies();
+    google.script.run.withSuccessHandler(function (senders) { lastSenders = senders || []; }).getSendersList();
   }
 
   function runNow() {

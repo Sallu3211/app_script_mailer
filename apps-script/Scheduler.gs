@@ -140,8 +140,15 @@ function processProspect_(prospect, campaign, sender) {
 
   if (result.permanent) {
     markBounced(prospect.ProspectID, result.error);
+  } else {
+    // Transient failure: Status/NextSendDate are left untouched so the next
+    // scheduler run retries it, but LastError is recorded so a prospect
+    // stuck retrying the same failure is visible on the dashboard
+    // drill-down, not just in the Logs tab. Cleared automatically on the
+    // next successful send by updateProspectAfterSend.
+    updateRowByKey(SHEET_NAMES.PROSPECTS, 'ProspectID', prospect.ProspectID, {
+      LastError: result.error || ''
+    });
   }
-  // Transient failure: prospect is left untouched (still Pending/Scheduled
-  // with its existing NextSendDate), so the next scheduler run retries it.
   return false;
 }

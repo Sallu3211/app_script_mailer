@@ -118,8 +118,10 @@ function getCampaignsList() {
     return {
       campaignId: c.CampaignID,
       name: c.Name,
+      senderId: c.SenderID,
       senderName: sender ? sender.Name : '(unknown sender)',
       senderEmail: sender ? sender.Email : '',
+      senderStatus: sender ? sender.Status : 'Missing',
       status: c.Status,
       sentToday: isNewDay(c.LastResetDate) ? 0 : (parseInt(c.SentToday, 10) || 0),
       dailyLimit: parseInt(c.DailyLimit, 10) || 0,

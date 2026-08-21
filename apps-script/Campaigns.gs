@@ -90,6 +90,24 @@ function deleteCampaign(campaignId) {
 }
 
 /**
+ * Points a campaign at a different sender -- the fix for a campaign stuck
+ * because its SenderID was deleted, or points at a sender that's still
+ * Pending. Doesn't touch the campaign's Status or any prospect rows; a
+ * Paused campaign stays Paused until explicitly started.
+ */
+function reassignCampaignSender(campaignId, newSenderId) {
+  var campaign = getCampaignById(campaignId);
+  if (!campaign) throw new Error('Campaign not found: ' + campaignId);
+  var sender = getSenderById(newSenderId);
+  if (!sender) throw new Error('Sender not found: ' + newSenderId);
+
+  updateRowByKey(SHEET_NAMES.CAMPAIGNS, 'CampaignID', campaignId, { SenderID: newSenderId });
+  logSystemEvent('Campaign ' + campaignId + ' (' + campaign.Name + ') reassigned from sender ' +
+    campaign.SenderID + ' to ' + newSenderId + ' (' + sender.Name + ') from dashboard', 'Info');
+  return { campaignId: campaignId, senderId: newSenderId, senderStatus: sender.Status };
+}
+
+/**
  * All campaigns (not just Active ones -- you may want to add a prospect to
  * a Paused campaign before flipping it live), with the sender's name
  * resolved for display. Used to populate the Add Prospect form's dropdown.
